@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sftoolbox"
+version = "0.0.1"
+description = "Structure-function coupling toolbox: FA-based structural connectivity vs. resting-state fMRI functional connectivity, benchmarked against an HCP normative cohort."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Tina Yuan" }]
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "pandas>=1.5",
+    "nibabel>=5.0",
+    "nilearn>=0.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+sft-build-reference = "sftoolbox.cli:build_reference_cli"
+sft-compare = "sftoolbox.cli:compare_cli"

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Notebooks
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+
+# Data (never commit subject imaging data)
+data/
+*.nii
+*.nii.gz
+*.mat
+*.gii
+
+# Outputs
+outputs/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
