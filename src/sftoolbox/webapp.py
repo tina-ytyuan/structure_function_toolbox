@@ -368,6 +368,7 @@ BATCH = """
 <div class="layout">
   <nav class="sidebar">
     <a class="top" href="#top">&uarr; Overview</a>
+    {% if group_png %}<a href="#groupavg">Group average</a>{% endif %}
     <h3>Subjects</h3>
     {% for r in rows %}
     <a href="#subj{{ loop.index0 }}">{{ r.sid }}</a>
@@ -393,6 +394,22 @@ BATCH = """
         <a class="btn-primary" href="{{ download_all_url }}">Download all maps (.zip)</a>
       </div>
     </div>
+
+    {% if group_png %}
+    <div class="card subject-card" id="groupavg">
+      <h2>Group average &middot; {{ n }} subjects</h2>
+      <p class="sub">Voxelwise mean of {{ measure_label }} across all subjects.</p>
+      <img src="data:image/png;base64,{{ group_png }}">
+      <img src="data:image/png;base64,{{ group_hist_png }}" style="margin-top:1rem;">
+      <div class="actions">
+        <a class="btn-secondary" href="{{ group_dl_url }}">Download group average (.nii.gz)</a>
+        <a class="btn-secondary" download="group_{{ measure_key }}_average.png"
+           href="data:image/png;base64,{{ group_png }}">Download image (PNG)</a>
+      </div>
+    </div>
+    {% elif group_note %}
+    <div class="card muted">{{ group_note }}</div>
+    {% endif %}
 
     {% for r in rows %}
     <div class="card subject-card" id="subj{{ loop.index0 }}">
@@ -548,6 +565,24 @@ def _hist_png(map3d, mask):
     return _fig_to_b64(viz.plot_value_hist(map3d, mask))
 
 
+def _group_average(results):
+    """Voxelwise mean map across subjects, ignoring out-of-mask voxels.
+
+    Returns (mean_map, mask, affine) if the subjects share a grid, else None.
+    """
+    maps = [m for _, m, _, _ in results]
+    masks = [mk for _, _, mk, _ in results]
+    affine = results[0][3]
+    if len(maps) < 2 or len({m.shape for m in maps}) != 1:
+        return None
+    stack = np.stack(maps)
+    mstack = np.stack(masks)
+    with np.errstate(invalid="ignore"):
+        gmean = np.nanmean(np.where(mstack, stack, np.nan), axis=0)
+    gmask = np.isfinite(gmean)
+    return np.nan_to_num(gmean), gmask, affine
+
+
 def _param_args(form):
     """Extract just the measure-parameter fields for a download URL."""
     keys = ("reho_cluster", "alff_tr", "alff_low", "alff_high")
@@ -639,12 +674,28 @@ def _render_batch(measure, results, params, notes, folder=None, form=None):
             row["pct"] = "n/a" if pct != pct else f"{pct:.0f}th"
         rows.append(row)
     controls = _controls_html("folder", measure, folder=folder, form=form)
-    download_all_url = "/download-batch?" + urlencode(
-        dict(_param_args(form), measure=measure, folder=folder or ""))
+    base_q = dict(_param_args(form), measure=measure, folder=folder or "")
+    download_all_url = "/download-batch?" + urlencode(base_q)
+
+    # Group-average map (voxelwise mean across subjects on a common grid).
+    group_png = group_hist_png = group_dl_url = None
+    group_note = ""
+    ga = _group_average(results)
+    if ga is not None:
+        gmean, gmask, gaffine = ga
+        group_png = _slices_png(gmean, gaffine, measure)
+        group_hist_png = _hist_png(gmean, gmask)
+        group_dl_url = "/download-group?" + urlencode(base_q)
+    elif len(results) >= 2:
+        group_note = ("A voxelwise group average needs all subjects on the same "
+                      "grid/space; these subjects differ, so no average is shown.")
+
     return render_template_string(
         BATCH, n=len(rows), measure_label=label, measure_key=measure,
         params=params, rows=rows, notes=notes, controls=controls,
-        has_pct=ref is not None, download_all_url=download_all_url)
+        has_pct=ref is not None, download_all_url=download_all_url,
+        group_png=group_png, group_hist_png=group_hist_png,
+        group_dl_url=group_dl_url, group_note=group_note)
 
 
 # ---- routes -----------------------------------------------------------
@@ -821,6 +872,51 @@ def download_batch():
                 continue
     return send_file(str(zip_path), as_attachment=True,
                      download_name=f"{measure}_maps.zip")
+
+
+@app.route("/download-group")
+def download_group():
+    """Voxelwise group-average measure map for a folder, as a NIfTI."""
+    import nibabel as nib
+
+    folder = request.args.get("folder", "")
+    measure = request.args.get("measure", "reho")
+    params = {
+        "cluster": request.args.get("reho_cluster", 27),
+        "tr": request.args.get("alff_tr", 2.0),
+        "low": request.args.get("alff_low", 0.01),
+        "high": request.args.get("alff_high", 0.08),
+    }
+    try:
+        bolds = io.find_subject_bolds(folder)
+    except Exception:
+        abort(404)
+
+    maps, masks, affine, shape = [], [], None, None
+    for _sid, path in list(bolds.items())[:MAX_BATCH]:
+        try:
+            img = io.load_nifti(path)
+            bold = np.asarray(img.get_fdata())
+            if bold.ndim != 4:
+                continue
+            m, mask = measures.compute(measure, bold, params)
+            if shape is None:
+                shape, affine = m.shape, img.affine
+            elif m.shape != shape:
+                continue
+            maps.append(m); masks.append(mask)
+        except Exception:
+            continue
+    if len(maps) < 2:
+        abort(400)
+
+    stack, mstack = np.stack(maps), np.stack(masks)
+    with np.errstate(invalid="ignore"):
+        gmean = np.nan_to_num(np.nanmean(np.where(mstack, stack, np.nan), axis=0))
+    out = CACHE_DIR / f"group_{measure}_average.nii.gz"
+    nib.save(nib.Nifti1Image(gmean.astype(np.float32), affine), str(out))
+    return send_file(str(out), as_attachment=True,
+                     download_name=f"group_{measure}_average.nii.gz")
 
 
 @app.route("/download")
