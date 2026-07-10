@@ -1,0 +1,80 @@
+"""Build a normative reference for one fMRI measure from a folder of subjects.
+
+Runs the chosen measure on every subject in a folder and saves a reference the
+web app auto-loads to show cohort comparisons (summary percentile + z-map).
+
+Usage
+-----
+    python scripts/build_measure_reference.py \
+        --subjects-root ~/sft_test_subjects --measure reho \
+        --out outputs/measure_ref_reho.npz
+
+    # ALFF/fALFF need TR + band:
+    python scripts/build_measure_reference.py --subjects-root ~/hcp \
+        --measure alff --tr 0.72 --low 0.01 --high 0.08
+
+Voxelwise z-maps only work if subjects share a voxel grid (same space). The
+summary percentile works regardless.
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import numpy as np
+
+from sftoolbox import io, measures, measure_norm
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--subjects-root", required=True)
+    ap.add_argument("--measure", required=True,
+                    choices=["reho", "alff", "falff", "rsfa"])
+    ap.add_argument("--out")
+    ap.add_argument("--cluster", type=int, default=27)
+    ap.add_argument("--tr", type=float, default=2.0)
+    ap.add_argument("--low", type=float, default=0.01)
+    ap.add_argument("--high", type=float, default=0.08)
+    args = ap.parse_args()
+
+    params = {"cluster": args.cluster, "tr": args.tr,
+              "low": args.low, "high": args.high}
+    out = args.out or measure_norm.default_path(args.measure)
+
+    bolds = io.find_subject_bolds(args.subjects_root)
+    if not bolds:
+        raise SystemExit(f"No BOLD NIfTIs found under {args.subjects_root}")
+
+    maps, masks, ids, skipped = [], [], [], []
+    shapes = set()
+    for sid, path in bolds.items():
+        try:
+            bold = io.load_nifti_data(path)
+            if bold.ndim != 4:
+                raise ValueError(f"not 4D (shape {bold.shape})")
+            m, mask = measures.compute(args.measure, bold, params)
+            maps.append(m); masks.append(mask); ids.append(sid)
+            shapes.add(m.shape)
+            print(f"  ok   {sid}  {m.shape}")
+        except Exception as e:
+            skipped.append((sid, str(e)))
+            print(f"  skip {sid}: {e}")
+
+    if not maps:
+        raise SystemExit("No subjects processed; nothing to save.")
+    if len(shapes) > 1:
+        print(f"\nWARNING: subjects have differing grids {shapes}. "
+              "Voxelwise z-maps need a common grid; the summary percentile will "
+              "still work. Consider resampling subjects to a common space.")
+
+    measure_norm.build(args.measure, maps, masks, out)
+    print(f"\nWrote {args.measure} reference for {len(ids)} subjects -> {out}")
+    if skipped:
+        print(f"Skipped {len(skipped)}.")
+
+
+if __name__ == "__main__":
+    main()

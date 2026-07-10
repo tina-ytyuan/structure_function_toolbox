@@ -20,22 +20,23 @@ def extract_functional(subject: "_io.Subject", labels_3d, config):
     return _fmri.functional_connectivity(ts, config)
 
 
-def extract_structural(subject: "_io.Subject", config):
+def extract_structural(subject: "_io.Subject", labels_3d, config):
     """Return FA-weighted structural connectivity matrix."""
-    return _fa.fa_structural_connectivity(subject, config)
+    return _fa.fa_structural_connectivity(subject, labels_3d, config)
 
 
-def extract_subject(subject: "_io.Subject", labels_3d, config):
+def extract_subject(subject: "_io.Subject", labels_3d, config,
+                    expected_regions: int | None = None):
     """Run the full path for one subject and return its coupling value(s).
 
     Raises loudly if the subject does not conform to the input contract.
     """
-    problems = _io.validate_conformance(subject, config)
+    problems = _io.validate_conformance(subject, config, expected_regions)
     if problems:
         raise ValueError(
             f"Subject {subject.subject_id} does not conform to input_spec:\n  - "
             + "\n  - ".join(problems)
         )
     func = extract_functional(subject, labels_3d, config)
-    struct = extract_structural(subject, config)
+    struct = extract_structural(subject, labels_3d, config)
     return _coupling.coupling(struct, func, config)

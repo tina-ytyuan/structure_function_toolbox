@@ -1,4 +1,6 @@
-"""Compare one user-supplied subject against the HCP normative reference."""
+"""
+Compare one user-supplied subject against the HCP normative reference.
+"""
 
 from __future__ import annotations
 

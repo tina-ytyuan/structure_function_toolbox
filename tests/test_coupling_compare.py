@@ -1,4 +1,5 @@
-"""Tests for the fully-implemented logic: coupling metrics + normative compare.
+"""
+Tests for the fully-implemented logic: coupling metrics + normative compare.
 
 These use synthetic matrices so they run without any imaging data and prove the
 math is correct end-to-end.
@@ -46,7 +47,9 @@ def test_shape_mismatch_raises():
 
 
 def test_reference_and_compare_roundtrip(tmp_path):
-    cfg = Config(coupling_metric="global_corr", reference_path=str(tmp_path / "ref.npz"))
+    cfg = Config(
+        coupling_metric="global_corr", reference_path=str(tmp_path / "ref.npz")
+    )
     # 100 HCP subjects, coupling ~ N(0.5, 0.1)
     rng = np.random.default_rng(2)
     vals = list(rng.normal(0.5, 0.1, size=100))
