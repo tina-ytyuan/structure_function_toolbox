@@ -354,28 +354,49 @@ RESULT = (
   </div>
 </div>
 
-{% if compare_png %}
-<div class="card">
-  <h2>Subject vs. cohort</h2>
-  <p class="sub">Where this subject's mean {{ measure_label }} falls among
-  {{ comp_n }} reference subjects.</p>
-  <div class="stats" style="margin-bottom:.8rem;">
-    <div class="stat"><div class="k">percentile</div><div class="v">{{ comp_pct }}</div></div>
+{% if cmp and cmp.mode == 'z' %}
+  {% if cmp.compare_png %}
+  <div class="card">
+    <h2>Subject vs. cohort</h2>
+    <p class="sub">Where this subject's mean {{ measure_label }} falls among
+    {{ cmp.n }} reference subjects.</p>
+    <div class="stats" style="margin-bottom:.8rem;">
+      <div class="stat"><div class="k">percentile</div><div class="v">{{ cmp.pct }}</div></div>
+    </div>
+    <img src="data:image/png;base64,{{ cmp.compare_png }}">
   </div>
-  <img src="data:image/png;base64,{{ compare_png }}">
-</div>
+  {% endif %}
+  {% if cmp.map_png %}
+  <div class="card">
+    <h2>Deviation z-map</h2>
+    <p class="sub">Voxelwise (subject &minus; cohort mean) / cohort SD. Red =
+    above the cohort, blue = below.</p>
+    <img src="data:image/png;base64,{{ cmp.map_png }}">
+  </div>
+  {% endif %}
+{% elif cmp and cmp.mode == 'diff' %}
+  <div class="card">
+    <h2>Subject vs. group average</h2>
+    <p class="sub">Difference from the group-average {{ measure_label }}{% if cmp.n %}
+    (n={{ cmp.n }}){% endif %}. No across-subject SD available, so this is a raw
+    difference, not a z-score.</p>
+    <div class="stats" style="margin-bottom:.8rem;">
+      <div class="stat"><div class="k">subject mean</div><div class="v">{{ cmp.subj_mean }}</div></div>
+      <div class="stat"><div class="k">group mean</div><div class="v">{{ cmp.grp_mean }}</div></div>
+      <div class="stat"><div class="k">difference</div><div class="v">{{ cmp.diff_mean }}</div></div>
+    </div>
+  </div>
+  {% if cmp.map_png %}
+  <div class="card">
+    <h2>Difference from average</h2>
+    <p class="sub">Voxelwise subject &minus; group mean. Red = above average,
+    blue = below.</p>
+    <img src="data:image/png;base64,{{ cmp.map_png }}">
+  </div>
+  {% endif %}
 {% endif %}
 
-{% if zmap_png %}
-<div class="card">
-  <h2>Deviation z-map</h2>
-  <p class="sub">Voxelwise (subject &minus; cohort mean) / cohort SD. Red =
-  above the cohort, blue = below.</p>
-  <img src="data:image/png;base64,{{ zmap_png }}">
-</div>
-{% endif %}
-
-{% if comp_note %}<div class="card muted">{{ comp_note }}</div>{% endif %}
+{% if cmp and cmp.note %}<div class="card muted">{{ cmp.note }}</div>{% endif %}
 {% if notes %}<div class="card muted">{{ notes }}</div>{% endif %}
 
 {{ controls|safe }}
@@ -801,32 +822,57 @@ def _stats(map3d, mask):
 
 
 def _compare_pngs(measure, map3d, mask, affine):
-    """If a reference for this measure exists, return comparison figures.
+    """Comparison against the reference for this measure, if one exists.
 
-    Returns (compare_png, zmap_png, pct_str, n, note).
+    Returns a dict describing the comparison (or None if no reference):
+      * mode "z"    -> z-scores vs a cohort with an SD map (percentile + z-map)
+      * mode "diff" -> difference from the group average (mean-only reference)
+      * mode "error"-> the reference could not be loaded
     """
     ref_path = measure_norm.default_path(measure)
     if not Path(ref_path).exists():
-        return None, None, None, None, ""
+        return None
     try:
         ref = measure_norm.load(ref_path)
-        z, z_mask, summary, pct = measure_norm.compare(map3d, mask, ref)
     except Exception as e:
-        return None, None, None, None, f"Could not load reference: {e}"
-    compare_png = _fig_to_b64(
-        viz.plot_subject_vs_reference(summary, {"values": ref["summaries"]})
-    )
-    zmap_png, note = None, ""
-    if z is not None:
-        zmap_png = _slices_png(z, affine, measure, symmetric=True, cmap="cold_hot")
+        return {"mode": "error", "note": f"Could not load reference: {e}"}
+
+    n = int(ref["n"]) if "n" in ref else 0
+
+    # z-score path (needs an across-subject SD map).
+    if measure_norm.has_sd(ref):
+        z, _zm, summary, pct = measure_norm.compare(map3d, mask, ref)
+        out = {"mode": "z", "n": n, "note": "",
+               "pct": "n/a" if pct != pct else f"{pct:.0f}th",
+               "compare_png": None, "map_png": None}
+        if np.asarray(ref["summaries"]).size:
+            out["compare_png"] = _fig_to_b64(
+                viz.plot_subject_vs_reference(summary, {"values": ref["summaries"]}))
+        if z is not None:
+            out["map_png"] = _slices_png(z, affine, measure, symmetric=True,
+                                         cmap="cold_hot")
+        else:
+            out["note"] = (
+                f"Cohort grid {tuple(int(s) for s in ref['shape'])} differs from "
+                f"this subject {map3d.shape}; showing summary percentile only.")
+        return out
+
+    # difference-from-average path (mean-only reference).
+    diff, _dm, subj_mean, grp_mean = measure_norm.difference(map3d, mask, ref)
+    finite = subj_mean == subj_mean and grp_mean == grp_mean
+    out = {"mode": "diff", "n": n, "note": "",
+           "subj_mean": "n/a" if subj_mean != subj_mean else f"{subj_mean:.3f}",
+           "grp_mean": "n/a" if grp_mean != grp_mean else f"{grp_mean:.3f}",
+           "diff_mean": f"{subj_mean - grp_mean:+.3f}" if finite else "n/a",
+           "map_png": None}
+    if diff is not None:
+        out["map_png"] = _slices_png(diff, affine, measure, symmetric=True,
+                                     cmap="cold_hot")
     else:
-        note = (
-            f"Cohort grid {tuple(int(s) for s in ref['shape'])} differs from "
-            f"this subject {map3d.shape}; showing summary percentile only "
-            "(resample to a common space for a voxelwise z-map)."
-        )
-    pct_str = "n/a" if pct != pct else f"{pct:.0f}th"
-    return compare_png, zmap_png, pct_str, int(ref["n"]), note
+        out["note"] = (
+            f"Group grid {tuple(int(s) for s in ref['shape'])} differs from this "
+            f"subject {map3d.shape}; showing summary means only.")
+    return out
 
 
 def _render(
@@ -846,9 +892,7 @@ def _render(
     png = _slices_png(map3d, affine, measure)
     hist_png = _hist_png(map3d, mask)
     mean, median, nvox = _stats(map3d, mask)
-    compare_png, zmap_png, comp_pct, comp_n, comp_note = _compare_pngs(
-        measure, map3d, mask, affine
-    )
+    cmp = _compare_pngs(measure, map3d, mask, affine)
     controls = _controls_html(
         mode, measure, folder=folder, cached=cached, form=form, sid=sid
     )
@@ -868,11 +912,7 @@ def _render(
         nvox=nvox,
         notes=notes,
         controls=controls,
-        compare_png=compare_png,
-        zmap_png=zmap_png,
-        comp_pct=comp_pct,
-        comp_n=comp_n,
-        comp_note=comp_note,
+        cmp=cmp,
         download_url=download_url,
     )
 

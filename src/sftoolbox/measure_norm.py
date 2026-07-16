@@ -72,3 +72,33 @@ def compare(subject_map: np.ndarray, subject_mask: np.ndarray, ref: dict):
     z = np.zeros_like(subject_map, dtype=float)
     z[z_mask] = (subject_map[z_mask] - mean_map[z_mask]) / sd_map[z_mask]
     return z, z_mask, summary, percentile
+
+
+def has_sd(ref: dict) -> bool:
+    """True if the reference carries a usable across-subject SD map."""
+    if "sd_map" not in ref:
+        return False
+    return bool(np.any(np.asarray(ref["sd_map"], float) > 0))
+
+
+def difference(subject_map: np.ndarray, subject_mask: np.ndarray, ref: dict):
+    """Compare a subject to the group *average* (no SD needed).
+
+    Returns (diff_map, diff_mask, subject_mean, group_mean) where
+    ``diff_map = subject - group_mean`` inside the shared mask. If the subject
+    and group grids differ, diff_map/diff_mask are None and only the two summary
+    means are returned. Use this when the reference has only a mean map.
+    """
+    mean_map = np.asarray(ref["mean_map"], float)
+    group_mask = np.asarray(ref["group_mask"], bool)
+
+    if tuple(int(s) for s in ref["shape"]) != subject_map.shape:
+        subj_mean = float(subject_map[subject_mask].mean())
+        return None, None, subj_mean, np.nan
+
+    m = group_mask & subject_mask
+    diff = np.zeros_like(subject_map, dtype=float)
+    diff[m] = subject_map[m] - mean_map[m]
+    subj_mean = float(subject_map[m].mean()) if m.any() else np.nan
+    grp_mean = float(mean_map[m].mean()) if m.any() else np.nan
+    return diff, m, subj_mean, grp_mean
