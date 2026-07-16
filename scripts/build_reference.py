@@ -24,8 +24,8 @@ from pathlib import Path
 
 import numpy as np
 
-from sftoolbox.config import DEFAULT
 from sftoolbox import io, pipeline, reference
+from sftoolbox.config import DEFAULT
 
 
 def build_real(subjects_root: str, atlas_path: str, out: str, cfg=DEFAULT):
@@ -42,8 +42,9 @@ def build_real(subjects_root: str, atlas_path: str, out: str, cfg=DEFAULT):
         sid = sd.name
         try:
             subj = io.Subject.from_dir(sid, sd)
-            val = pipeline.extract_subject(subj, labels_3d, cfg,
-                                           expected_regions=expected)
+            val = pipeline.extract_subject(
+                subj, labels_3d, cfg, expected_regions=expected
+            )
             values.append(val)
             ids.append(sid)
             print(f"  ok   {sid}")
@@ -75,13 +76,17 @@ def build_synthetic(out: str, n_subjects: int = 100, cfg=DEFAULT):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--subjects-root", help="folder with one subfolder per subject")
     ap.add_argument("--atlas", help="integer label NIfTI matching the config atlas")
     ap.add_argument("--out", default=DEFAULT.reference_path)
-    ap.add_argument("--synthetic", action="store_true",
-                    help="build a placeholder reference with no data")
+    ap.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="build a placeholder reference with no data",
+    )
     args = ap.parse_args()
 
     if args.synthetic:

@@ -30,3 +30,10 @@ outputs/
 .DS_Store
 .vscode/
 .idea/
+_dcc_compare/
+
+# Accidental virtualenvs from a mistyped `venv` command (delete these)
+/\#/
+/the/
+/recreate/
+/environment/

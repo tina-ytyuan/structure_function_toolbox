@@ -1,168 +1,219 @@
 """Voxelwise fMRI measures computed from cleaned BOLD only.
 
-Each function takes a 4D BOLD array (X, Y, Z, T) and returns a 3D map plus a
-brain mask. No atlas, diffusion, or extra inputs required — just cleaned BOLD
-(and TR for frequency-based measures).
+The numerics come from ``fmri_measures.py``, which is vendored verbatim from
+Ajay's DCC code (``fMRI_signal_properties.py``) so the toolbox computes ALFF,
+fALFF, ReHo, and RSFA exactly the way the team does. This module is only a thin
+adapter: it builds a brain mask, calls Ajay's functions, and returns each result
+as a ``(map_3d, mask)`` pair in the (X, Y, Z) grid the rest of the toolbox (web
+app, references, viz) expects.
 
-Measures
---------
-  reho        Regional homogeneity (Kendall's W over a voxel neighborhood).
-  alff_falff  Amplitude of low-frequency fluctuation (and fractional ALFF).
-  seed_fc     Seed-based functional connectivity (correlation map).
-
-These are intentionally standard, well-known definitions so results are
-comparable to other resting-state pipelines.
+Do not put measure math here — change it upstream in ``fmri_measures.py`` (or,
+better, re-vendor from Ajay's file). Defaults follow HCP / Ajay: TR = 0.72 s,
+band 0.01-0.08 Hz, 27-voxel ReHo neighborhood.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from . import fmri_measures as _fm
+from . import fmri_measures_arnav as _fma
+
+# HCP / Ajay defaults.
+DEFAULT_TR = 0.72
+DEFAULT_LOW = 0.01
+DEFAULT_HIGH = 0.08
+
+# Arnav-measure defaults.
+DEFAULT_INT_MAX_LAG = 20
+DEFAULT_MSE_SCALES = (1, 2, 3, 4, 5)
+DEFAULT_MSE_M = 2
+DEFAULT_MSE_R = 0.15
+
 
 def brain_mask(bold_4d: np.ndarray) -> np.ndarray:
-    """Simple data-driven mask: voxels with non-trivial temporal variance."""
-    var = bold_4d.var(axis=-1)
-    thr = var.mean() * 0.05
-    return var > max(thr, 1e-8)
+    """Analysis mask matching Ajay's pipeline: finite voxels with signal.
+
+    A voxel is kept if its time series is finite everywhere and not identically
+    zero. (Ajay's ``process_nifti`` uses exactly this when no explicit mask is
+    supplied.)
+    """
+    finite = np.all(np.isfinite(bold_4d), axis=-1)
+    return finite & np.any(bold_4d != 0, axis=-1)
 
 
-def _rank_time(bold_4d: np.ndarray) -> np.ndarray:
-    """Rank each voxel's time series along time (ties ignored; fine for BOLD)."""
-    order = np.argsort(bold_4d, axis=-1)
-    ranks = np.empty_like(order, dtype=np.float64)
-    T = bold_4d.shape[-1]
-    idx = np.arange(1, T + 1)
-    np.put_along_axis(ranks, order, np.broadcast_to(idx, order.shape), axis=-1)
-    return ranks
-
-
-def _neighbor_offsets(cluster: int):
-    if cluster not in (7, 19, 27):
-        raise ValueError("cluster must be 7, 19, or 27")
-    offs = []
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            for dz in (-1, 0, 1):
-                man = abs(dx) + abs(dy) + abs(dz)
-                if cluster == 7 and man > 1:
-                    continue
-                if cluster == 19 and man > 2:
-                    continue
-                offs.append((dx, dy, dz))
-    return offs
+def _inflate(values: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Put a (V,) masked-voxel vector back into a 3D volume; 0 outside mask."""
+    out = np.zeros(mask.shape, dtype=np.float64)
+    out[mask] = values
+    return out
 
 
 def reho(bold_4d: np.ndarray, mask: np.ndarray | None = None,
-         cluster: int = 27) -> tuple[np.ndarray, np.ndarray]:
-    """Regional homogeneity (Kendall's coefficient of concordance) map.
-
-    For each voxel, the concordance of its own and its neighbors' time-series
-    rankings. cluster = 7 (faces), 19 (+edges), or 27 (+corners).
-    """
-    if mask is None:
-        mask = brain_mask(bold_4d)
-    X, Y, Z, T = bold_4d.shape
-    ranks = _rank_time(bold_4d)                      # (X,Y,Z,T)
-    offs = _neighbor_offsets(cluster)
-    K = len(offs)
-
-    summed = np.zeros((X, Y, Z, T), dtype=np.float64)
-    count = np.zeros((X, Y, Z), dtype=np.float64)
-    for dx, dy, dz in offs:
-        shifted = np.roll(ranks, shift=(dx, dy, dz), axis=(0, 1, 2))
-        summed += shifted
-        count += 1
-    # Kendall's W per voxel from the summed neighbor ranks over time.
-    mean_r = summed.mean(axis=-1, keepdims=True)
-    S = ((summed - mean_r) ** 2).sum(axis=-1)
-    denom = (K ** 2) * (T ** 3 - T)
-    W = np.where(denom > 0, 12.0 * S / denom, 0.0)
-    W[~mask] = 0.0
-    return W, mask
-
-
-def alff_falff(bold_4d: np.ndarray, tr: float, mask: np.ndarray | None = None,
-               band: tuple[float, float] = (0.01, 0.08)
-               ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """ALFF and fractional ALFF maps.
-
-    ALFF = mean spectral amplitude within ``band``.
-    fALFF = band amplitude / total amplitude across all positive frequencies.
-    Requires TR (seconds) to build the frequency axis.
-    """
-    if mask is None:
-        mask = brain_mask(bold_4d)
-    T = bold_4d.shape[-1]
-    x = bold_4d - bold_4d.mean(axis=-1, keepdims=True)      # remove DC
-    freqs = np.fft.rfftfreq(T, d=tr)
-    amp = np.abs(np.fft.rfft(x, axis=-1))
-    inband = (freqs >= band[0]) & (freqs <= band[1])
-    total = amp[..., freqs > 0].sum(axis=-1)
-    band_amp = amp[..., inband].sum(axis=-1)
-    alff = np.where(inband.sum() > 0, amp[..., inband].mean(axis=-1), 0.0)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        falff = np.where(total > 0, band_amp / total, 0.0)
-    alff[~mask] = 0.0
-    falff[~mask] = 0.0
-    return alff, falff, mask
-
-
-def rsfa(bold_4d: np.ndarray, mask: np.ndarray | None = None
+         cluster: int = 27, tr: float = DEFAULT_TR,
+         low: float = DEFAULT_LOW, high: float = DEFAULT_HIGH,
+         detrend: bool = False, filter_band: bool = False
          ) -> tuple[np.ndarray, np.ndarray]:
-    """Resting-State Fluctuation Amplitude: temporal standard deviation of BOLD.
+    """Kendall's-W regional homogeneity (Ajay's ``compute_reho``).
 
-    RSFA (Kannurpatti & Biswal, 2008) is the standard deviation of each voxel's
-    resting-state time series — a simple, robust amplitude measure that needs
-    only cleaned BOLD (no TR or frequency band).
+    ``cluster`` is the neighborhood size (7, 19, or 27). Returns (map_3d, mask).
     """
     if mask is None:
         mask = brain_mask(bold_4d)
-    out = bold_4d.std(axis=-1)
-    out[~mask] = 0.0
-    return out, mask
+    w = _fm.compute_reho(bold_4d, mask=mask, neighborhood=cluster, tr=tr,
+                         low=low, high=high, detrend=detrend,
+                         filter_band=filter_band)
+    return w, mask
 
 
-def seed_fc(bold_4d: np.ndarray, seed_ijk: tuple[int, int, int],
-            mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Seed-based functional connectivity: correlation of every voxel with a seed.
+def alff_falff(bold_4d: np.ndarray, tr: float = DEFAULT_TR,
+               mask: np.ndarray | None = None,
+               band: tuple[float, float] = (DEFAULT_LOW, DEFAULT_HIGH)
+               ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """ALFF and fALFF maps (Ajay's ``compute_alff`` / ``compute_falff``).
 
-    seed_ijk is a voxel coordinate (i, j, k). Returns a correlation map in
-    [-1, 1].
+    Returns (alff_3d, falff_3d, mask). Both are DPABI-matched: linear detrend,
+    zero-pad to next power of two, amplitude = |FFT|*2/T, DPABI bin cutoffs.
     """
     if mask is None:
         mask = brain_mask(bold_4d)
-    i, j, k = seed_ijk
-    X, Y, Z, T = bold_4d.shape
-    if not (0 <= i < X and 0 <= j < Y and 0 <= k < Z):
-        raise ValueError(f"seed {seed_ijk} outside volume {(X, Y, Z)}")
-    seed = bold_4d[i, j, k, :]
-    seed = (seed - seed.mean()) / (seed.std() + 1e-12)
-    xz = bold_4d - bold_4d.mean(axis=-1, keepdims=True)
-    xz = xz / (bold_4d.std(axis=-1, keepdims=True) + 1e-12)
-    fc = (xz * seed).mean(axis=-1)
-    fc[~mask] = 0.0
-    return np.clip(fc, -1.0, 1.0), mask
+    flat = bold_4d[mask]                       # (V, T)
+    low, high = band
+    alff = _fm.compute_alff(flat, tr=tr, low=low, high=high, normalize=False)
+    falff = _fm.compute_falff(flat, tr=tr, low=low, high=high, normalize=False)
+    return _inflate(alff, mask), _inflate(falff, mask), mask
+
+
+def rsfa(bold_4d: np.ndarray, mask: np.ndarray | None = None,
+         tr: float = DEFAULT_TR,
+         band: tuple[float, float] = (DEFAULT_LOW, DEFAULT_HIGH),
+         bandpass: bool = True) -> tuple[np.ndarray, np.ndarray]:
+    """RSFA / BOLD-SD (Ajay's ``compute_bold_sd_rsfa``).
+
+    Temporal SD (ddof=1) after linear detrend and FFT band-pass. Returns
+    (map_3d, mask).
+    """
+    if mask is None:
+        mask = brain_mask(bold_4d)
+    flat = bold_4d[mask]                       # (V, T)
+    low, high = band
+    vals = _fm.compute_bold_sd_rsfa(flat, tr=tr, low=low, high=high,
+                                    bandpass=bandpass, normalize=False)
+    return _inflate(vals, mask), mask
+
+
+# --- Arnav's additional measures (adapters over fmri_measures_arnav) ----
+
+_SLOW_BANDS = {"slow5": _fma.SLOW5, "slow4": _fma.SLOW4}
+
+
+def alff_falff_band(bold_4d: np.ndarray, key: str, tr: float = DEFAULT_TR,
+                    mask: np.ndarray | None = None
+                    ) -> tuple[np.ndarray, np.ndarray]:
+    """One slow-band ALFF/fALFF map (Arnav). ``key`` e.g. 'alff_slow5'."""
+    if mask is None:
+        mask = brain_mask(bold_4d)
+    _kind, name = key.split("_", 1)            # ('alff'|'falff', 'slow4'|'slow5')
+    band = _SLOW_BANDS[name]
+    res = _fma.compute_alff_falff(bold_4d[mask], tr=tr, bands={name: band},
+                                  detrend=True, standardize=False)
+    return _inflate(res[key], mask), mask
+
+
+def int_timescale(bold_4d: np.ndarray, mask: np.ndarray | None = None,
+                  tr: float = DEFAULT_TR, max_lag: int = DEFAULT_INT_MAX_LAG
+                  ) -> tuple[np.ndarray, np.ndarray]:
+    """Intrinsic Neural Timescale (Arnav's ``compute_int``)."""
+    if mask is None:
+        mask = brain_mask(bold_4d)
+    vals = _fma.compute_int(bold_4d[mask], tr=tr, max_lag=max_lag)
+    return _inflate(vals, mask), mask
+
+
+def coherence_reho(bold_4d: np.ndarray, mask: np.ndarray | None = None,
+                   tr: float = DEFAULT_TR,
+                   band: tuple[float, float] = (DEFAULT_LOW, DEFAULT_HIGH)
+                   ) -> tuple[np.ndarray, np.ndarray]:
+    """Coherence-ReHo (Arnav's ``compute_coherence_reho``).
+
+    Returns (map_3d, mask). The returned mask marks voxels where a coherence
+    value was actually computed (finite); invalid voxels are 0 in the map.
+    """
+    if mask is None:
+        mask = brain_mask(bold_4d)
+    out3d = _fma.compute_coherence_reho(bold_4d, tr=tr, band=band, mask=mask)
+    valid = mask & np.isfinite(out3d)
+    return np.nan_to_num(np.asarray(out3d, dtype=np.float64), nan=0.0), valid
+
+
+def mse_complexity(bold_4d: np.ndarray, mask: np.ndarray | None = None,
+                   tr: float = DEFAULT_TR, scales=DEFAULT_MSE_SCALES,
+                   m: int = DEFAULT_MSE_M, r_ratio: float = DEFAULT_MSE_R,
+                   method: str = "mean") -> tuple[np.ndarray, np.ndarray]:
+    """Multiscale-entropy complexity index (Arnav).
+
+    Sample entropy per coarse-grained scale (``compute_mse``), collapsed across
+    scales with a NaN-aware reduction (mean by default; +inf -> NaN first),
+    matching ``compute_mse_complexity_index.py``. Requires ``antropy``.
+    """
+    if mask is None:
+        mask = brain_mask(bold_4d)
+    scales = tuple(int(s) for s in scales)
+    per = _fma.compute_mse(bold_4d[mask], scales=scales, m=m, r_ratio=r_ratio,
+                           detrend=True, standardize=False)
+    stack = np.stack([per[f"mse_scale_{s}"] for s in scales], axis=0)  # (S, V)
+    stack = stack.astype(np.float64)
+    stack[np.isinf(stack)] = np.nan
+    with np.errstate(invalid="ignore"):
+        ci = np.nansum(stack, axis=0) if method == "sum" else np.nanmean(stack, axis=0)
+    valid = mask.copy()
+    valid[mask] = np.isfinite(ci)
+    return _inflate(np.nan_to_num(ci, nan=0.0), mask), valid
 
 
 def compute(measure: str, bold_4d: np.ndarray, params: dict | None = None):
     """Dispatch by measure key; return (map_3d, mask). Shared by app + scripts."""
     p = params or {}
+    tr = float(p.get("tr", DEFAULT_TR))
+    low = float(p.get("low", DEFAULT_LOW))
+    high = float(p.get("high", DEFAULT_HIGH))
+    # Ajay's four.
     if measure == "reho":
-        return reho(bold_4d, cluster=int(p.get("cluster", 27)))
+        return reho(bold_4d, cluster=int(p.get("cluster", 27)),
+                    tr=tr, low=low, high=high)
     if measure in ("alff", "falff"):
-        alff, falff, mask = alff_falff(
-            bold_4d, tr=float(p.get("tr", 2.0)),
-            band=(float(p.get("low", 0.01)), float(p.get("high", 0.08))))
+        alff, falff, mask = alff_falff(bold_4d, tr=tr, band=(low, high))
         return (alff if measure == "alff" else falff), mask
     if measure == "rsfa":
-        return rsfa(bold_4d)
+        return rsfa(bold_4d, tr=tr, band=(low, high))
+    # Arnav's additions.
+    if measure in ("alff_slow5", "alff_slow4", "falff_slow5", "falff_slow4"):
+        return alff_falff_band(bold_4d, measure, tr=tr)
+    if measure == "int":
+        return int_timescale(bold_4d, tr=tr,
+                             max_lag=int(p.get("max_lag", DEFAULT_INT_MAX_LAG)))
+    if measure == "coherence_reho":
+        return coherence_reho(bold_4d, tr=tr, band=(low, high))
+    if measure == "mse":
+        scales = p.get("mse_scales", DEFAULT_MSE_SCALES)
+        return mse_complexity(bold_4d, tr=tr, scales=scales,
+                              m=int(p.get("mse_m", DEFAULT_MSE_M)),
+                              r_ratio=float(p.get("mse_r", DEFAULT_MSE_R)))
     raise ValueError(f"unknown measure: {measure}")
 
 
-# Registry so the UI/back end can look measures up by key.
+# Registry so the UI/back end can look measures up by key. Ajay's four first,
+# then Arnav's additional measures.
 MEASURES = {
     "reho": {"label": "Regional Homogeneity (ReHo)"},
     "alff": {"label": "ALFF"},
     "falff": {"label": "fALFF (fractional ALFF)"},
     "rsfa": {"label": "RSFA (Resting-State Fluctuation Amplitude)"},
+    "alff_slow5": {"label": "ALFF (slow-5, 0.01-0.027 Hz)"},
+    "alff_slow4": {"label": "ALFF (slow-4, 0.027-0.073 Hz)"},
+    "falff_slow5": {"label": "fALFF (slow-5, 0.01-0.027 Hz)"},
+    "falff_slow4": {"label": "fALFF (slow-4, 0.027-0.073 Hz)"},
+    "int": {"label": "INT (Intrinsic Neural Timescale)"},
+    "coherence_reho": {"label": "Coherence-ReHo"},
+    "mse": {"label": "MSE (Multiscale Entropy complexity index)"},
 }

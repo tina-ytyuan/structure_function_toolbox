@@ -20,28 +20,45 @@ summary percentile works regardless.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
-import numpy as np
-
-from sftoolbox import io, measures, measure_norm
+from sftoolbox import io, measure_norm, measures
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--subjects-root", required=True)
-    ap.add_argument("--measure", required=True,
-                    choices=["reho", "alff", "falff", "rsfa"])
+    ap.add_argument(
+        "--measure", required=True, choices=sorted(measures.MEASURES),
+        help="Any measure key (Ajay's four or Arnav's additions)",
+    )
     ap.add_argument("--out")
     ap.add_argument("--cluster", type=int, default=27)
-    ap.add_argument("--tr", type=float, default=2.0)
+    ap.add_argument("--tr", type=float, default=0.72)
     ap.add_argument("--low", type=float, default=0.01)
     ap.add_argument("--high", type=float, default=0.08)
+    ap.add_argument("--max-lag", type=int, default=measures.DEFAULT_INT_MAX_LAG,
+                    help="INT only: autocorrelation lags")
+    ap.add_argument("--mse-scales", type=int, nargs="+",
+                    default=list(measures.DEFAULT_MSE_SCALES),
+                    help="MSE only: coarse-graining scales")
+    ap.add_argument("--mse-m", type=int, default=measures.DEFAULT_MSE_M,
+                    help="MSE only: sample-entropy embedding order")
+    ap.add_argument("--mse-r", type=float, default=measures.DEFAULT_MSE_R,
+                    help="MSE only: sample-entropy tolerance ratio")
     args = ap.parse_args()
 
-    params = {"cluster": args.cluster, "tr": args.tr,
-              "low": args.low, "high": args.high}
+    params = {
+        "cluster": args.cluster,
+        "tr": args.tr,
+        "low": args.low,
+        "high": args.high,
+        "max_lag": args.max_lag,
+        "mse_scales": tuple(args.mse_scales),
+        "mse_m": args.mse_m,
+        "mse_r": args.mse_r,
+    }
     out = args.out or measure_norm.default_path(args.measure)
 
     bolds = io.find_subject_bolds(args.subjects_root)
@@ -56,7 +73,9 @@ def main():
             if bold.ndim != 4:
                 raise ValueError(f"not 4D (shape {bold.shape})")
             m, mask = measures.compute(args.measure, bold, params)
-            maps.append(m); masks.append(mask); ids.append(sid)
+            maps.append(m)
+            masks.append(mask)
+            ids.append(sid)
             shapes.add(m.shape)
             print(f"  ok   {sid}  {m.shape}")
         except Exception as e:
@@ -66,9 +85,11 @@ def main():
     if not maps:
         raise SystemExit("No subjects processed; nothing to save.")
     if len(shapes) > 1:
-        print(f"\nWARNING: subjects have differing grids {shapes}. "
-              "Voxelwise z-maps need a common grid; the summary percentile will "
-              "still work. Consider resampling subjects to a common space.")
+        print(
+            f"\nWARNING: subjects have differing grids {shapes}. "
+            "Voxelwise z-maps need a common grid; the summary percentile will "
+            "still work. Consider resampling subjects to a common space."
+        )
 
     measure_norm.build(args.measure, maps, masks, out)
     print(f"\nWrote {args.measure} reference for {len(ids)} subjects -> {out}")

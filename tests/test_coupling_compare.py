@@ -6,9 +6,10 @@ math is correct end-to-end.
 """
 
 import numpy as np
+import pytest
 
+from sftoolbox import compare, coupling, reference
 from sftoolbox.config import Config
-from sftoolbox import coupling, reference, compare
 
 
 def _sym(mat):
@@ -39,11 +40,8 @@ def test_shape_mismatch_raises():
     cfg = Config()
     struct = np.zeros((10, 10))
     func = np.zeros((8, 8))
-    try:
+    with pytest.raises(ValueError):
         coupling.coupling(struct, func, cfg)
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
 
 def test_reference_and_compare_roundtrip(tmp_path):

@@ -32,8 +32,13 @@ def _save(fig, out_path):
     return fig
 
 
-def plot_matrix(mat: np.ndarray, title: str = "", out_path=None,
-                cmap: str = "RdBu_r", symmetric: bool = True):
+def plot_matrix(
+    mat: np.ndarray,
+    title: str = "",
+    out_path=None,
+    cmap: str = "RdBu_r",
+    symmetric: bool = True,
+):
     """Heatmap of a connectivity matrix (FC or FA structural)."""
     import matplotlib.pyplot as plt
 
@@ -41,7 +46,8 @@ def plot_matrix(mat: np.ndarray, title: str = "", out_path=None,
     vmin, vmax = _range(mat, symmetric)
     im = ax.imshow(mat, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
     ax.set_title(title)
-    ax.set_xlabel("region"); ax.set_ylabel("region")
+    ax.set_xlabel("region")
+    ax.set_ylabel("region")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     fig.tight_layout()
     return _save(fig, out_path)
@@ -58,18 +64,33 @@ def plot_fc_vs_fa(fc: np.ndarray, fa_sc: np.ndarray, out_path=None):
     ):
         vmin, vmax = _range(mat, sym)
         im = ax.imshow(mat, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
-        ax.set_title(title); ax.set_xlabel("region"); ax.set_ylabel("region")
+        ax.set_title(title)
+        ax.set_xlabel("region")
+        ax.set_ylabel("region")
         if not np.isfinite(mat).any():
-            ax.text(0.5, 0.5, "not computed", transform=ax.transAxes,
-                    ha="center", va="center", color="0.5", fontsize=11)
+            ax.text(
+                0.5,
+                0.5,
+                "not computed",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                color="0.5",
+                fontsize=11,
+            )
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     fig.tight_layout()
     return _save(fig, out_path)
 
 
-def plot_brain_map(map_3d: np.ndarray, mask: np.ndarray | None = None,
-                   title: str = "", cmap: str = "magma",
-                   diverging: bool = False, out_path=None):
+def plot_brain_map(
+    map_3d: np.ndarray,
+    mask: np.ndarray | None = None,
+    title: str = "",
+    cmap: str = "magma",
+    diverging: bool = False,
+    out_path=None,
+):
     """Representative axial slice + a histogram of in-mask values.
 
     Used for voxelwise measures (ReHo, ALFF, seed FC). Picks the axial slice
@@ -100,15 +121,22 @@ def plot_brain_map(map_3d: np.ndarray, mask: np.ndarray | None = None,
 
     ax1.hist(vals, bins=40, color="#a9c8e0", edgecolor="#7fa9cc")
     ax1.set_title("value distribution (in mask)")
-    ax1.set_xlabel("value"); ax1.set_ylabel("voxels")
+    ax1.set_xlabel("value")
+    ax1.set_ylabel("voxels")
     fig.tight_layout()
     return _save(fig, out_path)
 
 
-def plot_brain_montage(map_3d: np.ndarray, mask: np.ndarray | None = None,
-                       rows: int = 3, cols: int = 8, title: str = "",
-                       cmap: str = "magma", diverging: bool = False,
-                       out_path=None):
+def plot_brain_montage(
+    map_3d: np.ndarray,
+    mask: np.ndarray | None = None,
+    rows: int = 3,
+    cols: int = 8,
+    title: str = "",
+    cmap: str = "magma",
+    diverging: bool = False,
+    out_path=None,
+):
     """Montage of evenly-spaced axial slices + a value histogram.
 
     Shows ``rows`` x ``cols`` slices spanning the masked z-range (default 3x8 =
@@ -136,8 +164,9 @@ def plot_brain_montage(map_3d: np.ndarray, mask: np.ndarray | None = None,
         vmax = float(np.max(vals)) if vals.size else 1.0
 
     fig = plt.figure(figsize=(cols * 1.35, rows * 1.35 + 3.4))
-    gs = fig.add_gridspec(rows + 1, cols, height_ratios=[1] * rows + [1.6],
-                          hspace=0.5, wspace=0.05)
+    gs = fig.add_gridspec(
+        rows + 1, cols, height_ratios=[1] * rows + [1.6], hspace=0.5, wspace=0.05
+    )
     slice_axes = []
     im = None
     for idx, z in enumerate(zslices):
@@ -145,7 +174,8 @@ def plot_brain_montage(map_3d: np.ndarray, mask: np.ndarray | None = None,
         ax = fig.add_subplot(gs[r, c])
         im = ax.imshow(np.rot90(map_3d[:, :, z]), cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(f"z={z}", fontsize=7, pad=1)
-        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_xticks([])
+        ax.set_yticks([])
         for s in ax.spines.values():
             s.set_visible(False)
         slice_axes.append(ax)
@@ -156,7 +186,8 @@ def plot_brain_montage(map_3d: np.ndarray, mask: np.ndarray | None = None,
     axh = fig.add_subplot(gs[rows, :])
     axh.hist(vals, bins=40, color="#a9c8e0", edgecolor="#7fa9cc")
     axh.set_title("value distribution (in mask)", fontsize=9)
-    axh.set_xlabel("value"); axh.set_ylabel("voxels")
+    axh.set_xlabel("value")
+    axh.set_ylabel("voxels")
 
     if title:
         fig.suptitle(title, fontsize=12, fontweight="bold", y=0.99)
@@ -168,12 +199,26 @@ _MEASURE_CMAP = {
     "alff": "cold_hot",
     "falff": "cold_hot",
     "rsfa": "viridis",
+    # Arnav's additional measures.
+    "alff_slow5": "cold_hot",
+    "alff_slow4": "cold_hot",
+    "falff_slow5": "cold_hot",
+    "falff_slow4": "cold_hot",
+    "int": "magma",
+    "coherence_reho": "YlOrRd",
+    "mse": "viridis",
 }
 
 
-def plot_orientations(map_3d: np.ndarray, affine, title: str = "",
-                      cmap: str = "cold_hot", symmetric: bool = False,
-                      n_cuts: int = 7, out_path=None):
+def plot_orientations(
+    map_3d: np.ndarray,
+    affine,
+    title: str = "",
+    cmap: str = "cold_hot",
+    symmetric: bool = False,
+    n_cuts: int = 7,
+    out_path=None,
+):
     """Radiological-style slice panels: axial, coronal, sagittal rows.
 
     Uses nilearn to render each orientation as a labelled row of anatomical
@@ -197,24 +242,38 @@ def plot_orientations(map_3d: np.ndarray, affine, title: str = "",
     rows = [("z", "axial"), ("y", "coronal"), ("x", "sagittal")]
     for i, (mode, label) in enumerate(rows):
         ax = fig.add_subplot(3, 1, i + 1)
-        disp = plotting.plot_stat_map(
-            img, bg_img=None, display_mode=mode, cut_coords=n_cuts,
-            colorbar=True, cmap=cmap, axes=ax, black_bg=False,
-            annotate=True, threshold=None,
-            symmetric_cbar=symmetric, vmax=vmax,
+        plotting.plot_stat_map(
+            img,
+            bg_img=None,
+            display_mode=mode,
+            cut_coords=n_cuts,
+            colorbar=True,
+            cmap=cmap,
+            axes=ax,
+            black_bg=False,
+            annotate=True,
+            threshold=None,
+            symmetric_cbar=symmetric,
+            vmin=vmin,
+            vmax=vmax,
         )
         # Orientation label in a black box, top-left of the row.
-        ax.annotate(label, xy=(0.005, 0.9), xycoords="axes fraction",
-                    fontsize=12, color="white", weight="bold",
-                    bbox=dict(boxstyle="square,pad=0.3", fc="black", ec="none"))
+        ax.annotate(
+            label,
+            xy=(0.005, 0.9),
+            xycoords="axes fraction",
+            fontsize=12,
+            color="white",
+            weight="bold",
+            bbox=dict(boxstyle="square,pad=0.3", fc="black", ec="none"),
+        )
     if title:
         fig.suptitle(title, fontsize=13, y=0.99)
     fig.subplots_adjust(hspace=0.25, top=0.95, bottom=0.02)
     return _save(fig, out_path)
 
 
-def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None,
-                    out_path=None):
+def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None, out_path=None):
     """Small histogram of in-mask values, shown alongside the slice panels."""
     import matplotlib.pyplot as plt
 
@@ -224,13 +283,15 @@ def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None,
     fig, ax = plt.subplots(figsize=(7, 2.6))
     ax.hist(vals, bins=40, color="#a9c8e0", edgecolor="#7fa9cc")
     ax.set_title("value distribution (in mask)", fontsize=10)
-    ax.set_xlabel("value"); ax.set_ylabel("voxels")
+    ax.set_xlabel("value")
+    ax.set_ylabel("voxels")
     fig.tight_layout()
     return _save(fig, out_path)
 
 
-def plot_subject_vs_reference(subject_value, reference: dict, out_path=None,
-                              region: int | None = None):
+def plot_subject_vs_reference(
+    subject_value, reference: dict, out_path=None, region: int | None = None
+):
     """Show where a subject's coupling falls in the HCP distribution.
 
     For a global (scalar) coupling metric, plots the HCP histogram with the
@@ -244,20 +305,28 @@ def plot_subject_vs_reference(subject_value, reference: dict, out_path=None,
 
     if vals.ndim == 2:  # regional: (S, N)
         if region is not None:
-            cohort = vals[:, region]; sval = float(np.ravel(x)[region])
+            cohort = vals[:, region]
+            sval = float(np.ravel(x)[region])
             label = f"region {region}"
         else:
-            cohort = np.nanmean(vals, axis=1); sval = float(np.nanmean(x))
+            cohort = np.nanmean(vals, axis=1)
+            sval = float(np.nanmean(x))
             label = "mean across regions"
     else:
-        cohort = vals; sval = float(x); label = "global"
+        cohort = vals
+        sval = float(x)
+        label = "global"
 
     pct = float((cohort < sval).mean() * 100)
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.hist(cohort, bins=25, color="#d6e6f2", edgecolor="#a9c8e0")
-    ax.axvline(sval, color="#3b82c4", lw=2.2,
-               label=f"subject ({label}) = {sval:.3f}\n{pct:.0f}th percentile")
+    ax.axvline(
+        sval,
+        color="#3b82c4",
+        lw=2.2,
+        label=f"subject ({label}) = {sval:.3f}\n{pct:.0f}th percentile",
+    )
     ax.set_xlabel("structure-function coupling")
     ax.set_ylabel("HCP subjects")
     ax.set_title("Subject vs. HCP normative distribution")

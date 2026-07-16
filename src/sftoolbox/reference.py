@@ -12,8 +12,9 @@ from pathlib import Path
 import numpy as np
 
 
-def build_reference(coupling_values: list, subject_ids: list[str], config,
-                    out_path: str | None = None) -> dict:
+def build_reference(
+    coupling_values: list, subject_ids: list[str], config, out_path: str | None = None
+) -> dict:
     """Aggregate per-subject coupling into a normative distribution.
 
     Parameters

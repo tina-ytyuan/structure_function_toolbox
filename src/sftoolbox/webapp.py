@@ -24,16 +24,16 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 
-import numpy as np
-
 # Headless plotting.
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 
-from flask import Flask, request, render_template_string, send_file, abort
+from flask import Flask, abort, render_template_string, request, send_file
 
-from . import io, measures, measure_norm, viz
-
+from . import fa as fa_mod
+from . import io, measure_norm, measures, viz
 
 app = Flask(__name__)
 
@@ -128,11 +128,14 @@ STYLE = """
 </style>
 """
 
-PAGE = """
+PAGE = (
+    """
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Structure-Function Toolbox</title>
-""" + STYLE + """
+"""
+    + STYLE
+    + """
 </head><body>
 <header><div class="wrap">
   <span class="title">Structure-Function Toolbox</span>
@@ -176,11 +179,35 @@ parameters, and generate the map. Everything runs on your machine.</p>
     <h2 style="margin-top:.6rem;">2 &nbsp;fMRI measure</h2>
     <label>Measure</label>
     <select name="measure" id="measure" onchange="showParams()">
-      <option value="reho">Regional Homogeneity (ReHo)</option>
-      <option value="alff">ALFF</option>
-      <option value="falff">fALFF (fractional ALFF)</option>
-      <option value="rsfa">RSFA (Resting-State Fluctuation Amplitude)</option>
+      <optgroup label="Standard (Ajay)">
+        <option value="reho">Regional Homogeneity (ReHo)</option>
+        <option value="alff">ALFF</option>
+        <option value="falff">fALFF (fractional ALFF)</option>
+        <option value="rsfa">RSFA (Resting-State Fluctuation Amplitude)</option>
+      </optgroup>
+      <optgroup label="Additional (Arnav)">
+        <option value="alff_slow5">ALFF (slow-5, 0.01-0.027 Hz)</option>
+        <option value="alff_slow4">ALFF (slow-4, 0.027-0.073 Hz)</option>
+        <option value="falff_slow5">fALFF (slow-5, 0.01-0.027 Hz)</option>
+        <option value="falff_slow4">fALFF (slow-4, 0.027-0.073 Hz)</option>
+        <option value="int">INT (Intrinsic Neural Timescale)</option>
+        <option value="coherence_reho">Coherence-ReHo</option>
+        <option value="mse">MSE (Multiscale Entropy complexity index)</option>
+      </optgroup>
     </select>
+
+    <!-- Shared acquisition params (used by every measure) -->
+    <div class="row">
+      <div><label>TR (seconds)</label>
+           <input type="number" name="alff_tr" step="0.01" value="0.72"></div>
+      <div><label>Low (Hz)</label>
+           <input type="number" name="alff_low" step="0.001" value="0.01"></div>
+      <div><label>High (Hz)</label>
+           <input type="number" name="alff_high" step="0.001" value="0.08"></div>
+    </div>
+    <p class="phint">TR sets the frequency axis. Low/High define the band for
+    ALFF, fALFF, RSFA, and Coherence-ReHo; the slow-4/slow-5 measures use their
+    own fixed bands.</p>
 
     <!-- ReHo params -->
     <div class="pgroup" data-measure="reho">
@@ -194,29 +221,55 @@ parameters, and generate the map. Everything runs on your machine.</p>
       (Kendall's W) is computed.</p>
     </div>
 
-    <!-- ALFF / fALFF params (shared) -->
-    <div class="pgroup" data-measure="alff falff">
-      <div class="row">
-        <div><label>TR (seconds)</label>
-             <input type="number" name="alff_tr" step="0.01" value="2.0"></div>
-        <div><label>Low (Hz)</label>
-             <input type="number" name="alff_low" step="0.001" value="0.01"></div>
-        <div><label>High (Hz)</label>
-             <input type="number" name="alff_high" step="0.001" value="0.08"></div>
-      </div>
-      <p class="phint">ALFF = mean amplitude in band; fALFF = band / total.
-      TR sets the frequency axis.</p>
+    <!-- INT params -->
+    <div class="pgroup" data-measure="int">
+      <label>Max lag (TRs)</label>
+      <input type="number" name="int_max_lag" step="1" value="20">
+      <p class="phint">Autocorrelation lags summed until the first non-positive
+      value (Watanabe et al. 2019).</p>
     </div>
 
-    <!-- RSFA has no parameters -->
-    <div class="pgroup" data-measure="rsfa">
-      <p class="phint">Temporal standard deviation of each voxel's BOLD signal.
-      No parameters.</p>
+    <!-- MSE params -->
+    <div class="pgroup" data-measure="mse">
+      <label>Scales (space-separated)</label>
+      <input type="text" name="mse_scales" value="1 2 3 4 5">
+      <div class="row">
+        <div><label>m (embedding)</label>
+             <input type="number" name="mse_m" step="1" value="2"></div>
+        <div><label>r (tolerance ratio)</label>
+             <input type="number" name="mse_r" step="0.01" value="0.15"></div>
+      </div>
+      <p class="phint">Sample entropy per coarse-grained scale; the map is the
+      NaN-aware mean across scales (complexity index). Requires antropy.</p>
     </div>
   </div>
 
   <div class="actions">
     <button type="submit" class="btn-primary">Generate measure</button>
+  </div>
+</form>
+
+<form method="post" action="/fa" enctype="multipart/form-data" class="card">
+  <h2>FA &nbsp;Structural (diffusion)</h2>
+  <p class="sub">Upload a precomputed FA map to view white-matter FA. Set the FA
+  threshold below which voxels are treated as non-white-matter and excluded.</p>
+
+  <label>FA map &mdash; 3D NIfTI</label>
+  <input type="file" name="fa">
+
+  <label>Atlas label volume &mdash; 3D NIfTI (optional, for regional FA)</label>
+  <input type="file" name="atlas">
+
+  <label>FA threshold: <span id="fathr_val">0.20</span></label>
+  <input type="range" name="fa_threshold" id="fathr" min="0" max="0.9"
+         step="0.01" value="0.20" style="width:100%;"
+         oninput="document.getElementById('fathr_val').textContent =
+                  parseFloat(this.value).toFixed(2);">
+  <p class="phint">0 keeps every voxel; 0.20 is the conventional white-matter
+  cutoff. You can fine-tune this on the results page without re-uploading.</p>
+
+  <div class="actions">
+    <button type="submit" class="btn-primary">Analyze FA</button>
   </div>
 </form>
 
@@ -228,7 +281,12 @@ parameters, and generate the map. Everything runs on your machine.</p>
     <button type="submit" name="measure" value="alff" class="btn-secondary">Demo: ALFF</button>
     <button type="submit" name="measure" value="falff" class="btn-secondary">Demo: fALFF</button>
     <button type="submit" name="measure" value="rsfa" class="btn-secondary">Demo: RSFA</button>
+    <button type="submit" name="measure" value="int" class="btn-secondary">Demo: INT</button>
+    <button type="submit" name="measure" value="coherence_reho" class="btn-secondary">Demo: Coherence-ReHo</button>
+    <button type="submit" name="measure" value="mse" class="btn-secondary">Demo: MSE</button>
   </div>
+  <p class="phint">INT, Coherence-ReHo, and MSE are Arnav's additional measures.
+  MSE requires the antropy package and is the slowest to compute.</p>
 </form>
 
 <script>
@@ -257,12 +315,16 @@ showParams(); showMode();
 </main>
 </body></html>
 """
+)
 
-RESULT = """
+RESULT = (
+    """
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Results — {{ sid }}</title>
-""" + STYLE + """
+"""
+    + STYLE
+    + """
 </head><body>
 <header><div class="wrap">
   <span class="title">Structure-Function Toolbox</span>
@@ -320,12 +382,16 @@ RESULT = """
 </main>
 </body></html>
 """
+)
 
-BATCH = """
+BATCH = (
+    """
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Batch results</title>
-""" + STYLE + """
+"""
+    + STYLE
+    + """
 <style>
  table{width:100%;border-collapse:collapse;font-size:.88rem;}
  th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--border);}
@@ -369,29 +435,22 @@ BATCH = """
   <nav class="sidebar">
     <a class="top" href="#top">&uarr; Overview</a>
     {% if group_png %}<a href="#groupavg">Group average</a>{% endif %}
-    <h3>Subjects</h3>
-    {% for r in rows %}
-    <a href="#subj{{ loop.index0 }}">{{ r.sid }}</a>
-    {% endfor %}
   </nav>
 
   <div class="maincol">
     <div class="card">
-      <h2>Summary</h2>
-      <p class="sub">Per-subject mean / median across the brain mask. Click a
-      subject to jump to it.</p>
-      <table>
-        <tr><th>Subject</th><th>Mean</th><th>Median</th><th>Masked voxels</th>
-            {% if has_pct %}<th>Cohort pctile</th>{% endif %}<th></th></tr>
-        {% for r in rows %}
-        <tr><td>{{ r.sid }}</td><td class="num">{{ r.mean }}</td>
-            <td class="num">{{ r.median }}</td><td class="num">{{ r.nvox }}</td>
-            {% if has_pct %}<td class="num">{{ r.pct }}</td>{% endif %}
-            <td class="viewcell"><a href="#subj{{ loop.index0 }}">View &darr;</a></td></tr>
-        {% endfor %}
-      </table>
-      <div class="actions">
-        <a class="btn-primary" href="{{ download_all_url }}">Download all maps (.zip)</a>
+      <h2>Cohort</h2>
+      <p class="sub">Group-level results only. Individual subject maps and
+      per-subject statistics are not shown, to keep the cohort de-identified.</p>
+      <div class="stats">
+        <div class="stat"><div class="k">subjects in group</div>
+             <div class="v">{{ n }}</div></div>
+        {% if group_png %}
+        <div class="stat"><div class="k">group mean</div>
+             <div class="v">{{ group_mean }}</div></div>
+        <div class="stat"><div class="k">group median</div>
+             <div class="v">{{ group_median }}</div></div>
+        {% endif %}
       </div>
     </div>
 
@@ -410,18 +469,6 @@ BATCH = """
     {% elif group_note %}
     <div class="card muted">{{ group_note }}</div>
     {% endif %}
-
-    {% for r in rows %}
-    <div class="card subject-card" id="subj{{ loop.index0 }}">
-      <h2>{{ r.sid }}</h2>
-      <img src="data:image/png;base64,{{ r.png }}">
-      <div class="actions">
-        <a class="btn-secondary" href="{{ r.download_url }}">Download map (.nii.gz)</a>
-        <a class="btn-secondary" download="{{ r.sid }}_{{ measure_key }}.png"
-           href="data:image/png;base64,{{ r.png }}">Download image (PNG)</a>
-      </div>
-    </div>
-    {% endfor %}
 
     {% if notes %}<div class="card muted">{{ notes }}</div>{% endif %}
   </div>
@@ -442,16 +489,85 @@ window.addEventListener('scroll', function(){
 </main>
 </body></html>
 """
+)
+
+
+FA_RESULT = (
+    """
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FA — {{ sid }}</title>
+"""
+    + STYLE
+    + """
+</head><body>
+<header><div class="wrap">
+  <span class="title">Structure-Function Toolbox</span>
+  <span class="tag">FA &middot; structural</span>
+</div></header>
+<main>
+<a class="back" href="/">&larr; New analysis</a>
+<h2 style="font-size:1.25rem;margin:.3rem 0 .2rem;">{{ sid }}</h2>
+<p class="muted">Fractional anisotropy &middot; threshold {{ thr }}</p>
+
+{% if error %}<div class="card err"><b>Problem:</b> {{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2>FA threshold</h2>
+  <p class="sub">Voxels with FA below the threshold are excluded (treated as
+  non-white-matter). Drag to re-threshold &mdash; no re-upload needed.</p>
+  <form method="post" action="/fa" id="thrform">
+    <input type="hidden" name="cached_fa" value="{{ cached_fa }}">
+    <input type="hidden" name="cached_atlas" value="{{ cached_atlas }}">
+    <input type="hidden" name="sid" value="{{ sid }}">
+    <label>FA threshold: <span id="fathr_val">{{ thr }}</span></label>
+    <input type="range" name="fa_threshold" id="fathr" min="0" max="0.9"
+           step="0.01" value="{{ thr }}" style="width:100%;"
+           oninput="document.getElementById('fathr_val').textContent =
+                    parseFloat(this.value).toFixed(2);"
+           onchange="document.getElementById('thrform').submit();">
+    <p class="phint">Release the slider to recompute at the new threshold.</p>
+  </form>
+</div>
+
+<div class="card">
+  <h2>FA map</h2>
+  <p class="sub">Axial, coronal, and sagittal slices of the thresholded FA map.</p>
+  <img src="data:image/png;base64,{{ map_png }}">
+  <div class="stats">
+    <div class="stat"><div class="k">mean FA (kept)</div><div class="v">{{ mean }}</div></div>
+    <div class="stat"><div class="k">voxels kept</div><div class="v">{{ nvox }}</div></div>
+    <div class="stat"><div class="k">% of brain kept</div><div class="v">{{ pct_kept }}</div></div>
+  </div>
+  <img src="data:image/png;base64,{{ hist_png }}" style="margin-top:1rem;">
+</div>
+
+{% if roi_png %}
+<div class="card">
+  <h2>Regional FA</h2>
+  <p class="sub">Mean FA within each of {{ n_regions }} atlas parcels (voxels
+  below threshold excluded from each region's mean).</p>
+  <img src="data:image/png;base64,{{ roi_png }}">
+</div>
+{% elif roi_note %}
+<div class="card muted">{{ roi_note }}</div>
+{% endif %}
+</main>
+</body></html>
+"""
+)
 
 
 # ---- helpers ----------------------------------------------------------
 
 MAX_BATCH = 24
 
+
 def _fig_to_b64(fig) -> str:
     buf = _stdio.BytesIO()
     fig.savefig(buf, format="png", dpi=140, bbox_inches="tight")
     import matplotlib.pyplot as plt
+
     plt.close(fig)
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
@@ -464,23 +580,59 @@ def _save_upload(file_storage, dest_dir: Path):
     return p
 
 
-def _compute(measure: str, bold: np.ndarray, form):
-    """Dispatch to the chosen measure; return (map3d, mask, params_str)."""
+def _form_params(form):
+    """Collect measure parameters from a request form into a params dict."""
+    def g(k, d):
+        v = form.get(k) if form is not None else None
+        return d if v in (None, "") else v
+    scales = g("mse_scales", "1 2 3 4 5")
+    try:
+        mse_scales = tuple(int(s) for s in str(scales).replace(",", " ").split())
+    except ValueError:
+        mse_scales = measures.DEFAULT_MSE_SCALES
+    return {
+        "tr": float(g("alff_tr", 0.72)),
+        "low": float(g("alff_low", 0.01)),
+        "high": float(g("alff_high", 0.08)),
+        "cluster": int(g("reho_cluster", 27)),
+        "max_lag": int(g("int_max_lag", measures.DEFAULT_INT_MAX_LAG)),
+        "mse_scales": mse_scales or measures.DEFAULT_MSE_SCALES,
+        "mse_m": int(g("mse_m", measures.DEFAULT_MSE_M)),
+        "mse_r": float(g("mse_r", measures.DEFAULT_MSE_R)),
+    }
+
+
+def _params_str(measure, p):
+    """Human-readable parameter summary for the results header."""
+    tr, lo, hi = p["tr"], p["low"], p["high"]
     if measure == "reho":
-        cl = int(form.get("reho_cluster", 27))
-        m, mask = measures.reho(bold, cluster=cl)
-        return m, mask, f"cluster {cl}", "magma", False
+        return f"cluster {p['cluster']}"
     if measure in ("alff", "falff"):
-        tr = float(form.get("alff_tr", 2.0))
-        lo = float(form.get("alff_low", 0.01))
-        hi = float(form.get("alff_high", 0.08))
-        alff, falff, mask = measures.alff_falff(bold, tr=tr, band=(lo, hi))
-        out = alff if measure == "alff" else falff
-        return out, mask, f"TR {tr}s, band {lo}-{hi} Hz", "magma", False
+        return f"TR {tr}s, band {lo}-{hi} Hz"
     if measure == "rsfa":
-        m, mask = measures.rsfa(bold)
-        return m, mask, "temporal std of BOLD", "magma", False
-    raise ValueError(f"unknown measure: {measure}")
+        return f"TR {tr}s, detrend + bandpass {lo}-{hi} Hz"
+    if measure in ("alff_slow5", "falff_slow5"):
+        return f"TR {tr}s, slow-5 0.01-0.027 Hz"
+    if measure in ("alff_slow4", "falff_slow4"):
+        return f"TR {tr}s, slow-4 0.027-0.073 Hz"
+    if measure == "int":
+        return f"TR {tr}s, max lag {p['max_lag']}"
+    if measure == "coherence_reho":
+        return f"TR {tr}s, band {lo}-{hi} Hz"
+    if measure == "mse":
+        sc = " ".join(str(s) for s in p["mse_scales"])
+        return f"scales [{sc}], m={p['mse_m']}, r={p['mse_r']}"
+    return ""
+
+
+def _compute(measure: str, bold: np.ndarray, form):
+    """Dispatch to the chosen measure; return (map3d, mask, params_str, cmap, sym)."""
+    if measure not in measures.MEASURES:
+        raise ValueError(f"unknown measure: {measure}")
+    p = _form_params(form)
+    m, mask = measures.compute(measure, bold, p)
+    cmap = viz._MEASURE_CMAP.get(measure, "magma")
+    return m, mask, _params_str(measure, p), cmap, False
 
 
 def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None):
@@ -489,9 +641,11 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
     Carries the datasource (folder path, cached upload, or folder+subject) as
     hidden fields so the user never re-selects it. In demo mode it re-runs /demo.
     """
-    g = (form.get if form is not None else (lambda k, d=None: d))
+    g = form.get if form is not None else (lambda k, d=None: d)
     reho_c = g("reho_cluster", "27")
-    tr = g("alff_tr", "2.0"); lo = g("alff_low", "0.01"); hi = g("alff_high", "0.08")
+    tr = g("alff_tr", "0.72")
+    lo = g("alff_low", "0.01")
+    hi = g("alff_high", "0.08")
 
     action = {"demo": "/demo", "subject": "/subject"}.get(mode, "/run")
     hidden = f'<input type="hidden" name="mode" value="{mode}">'
@@ -500,19 +654,45 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
     if mode == "subject" and sid:
         hidden += f'<input type="hidden" name="sid" value="{html.escape(sid)}">'
     if mode == "single" and cached:
-        hidden += f'<input type="hidden" name="cached_bold" value="{html.escape(cached)}">'
-    same = {"demo": "same synthetic data", "folder": "same folder",
-            "subject": "same subject"}.get(mode, "same subject")
+        hidden += (
+            f'<input type="hidden" name="cached_bold" value="{html.escape(cached)}">'
+        )
+    same = {
+        "demo": "same synthetic data",
+        "folder": "same folder",
+        "subject": "same subject",
+    }.get(mode, "same subject")
 
     def opt(v, label):
-        return f'<option value="{v}"{" selected" if v == measure else ""}>{label}</option>'
+        return (
+            f'<option value="{v}"{" selected" if v == measure else ""}>{label}</option>'
+        )
 
     def rsel(v):
         return " selected" if reho_c == v else ""
 
-    options = (opt("reho", "Regional Homogeneity (ReHo)") + opt("alff", "ALFF")
-               + opt("falff", "fALFF (fractional ALFF)")
-               + opt("rsfa", "RSFA (Resting-State Fluctuation Amplitude)"))
+    mse_scales = g("mse_scales", "1 2 3 4 5")
+    mse_m = g("mse_m", "2")
+    mse_r = g("mse_r", "0.15")
+    max_lag = g("int_max_lag", "20")
+
+    std_opts = (
+        opt("reho", "Regional Homogeneity (ReHo)")
+        + opt("alff", "ALFF")
+        + opt("falff", "fALFF (fractional ALFF)")
+        + opt("rsfa", "RSFA (Resting-State Fluctuation Amplitude)")
+    )
+    arnav_opts = (
+        opt("alff_slow5", "ALFF (slow-5)")
+        + opt("alff_slow4", "ALFF (slow-4)")
+        + opt("falff_slow5", "fALFF (slow-5)")
+        + opt("falff_slow4", "fALFF (slow-4)")
+        + opt("int", "INT (Intrinsic Neural Timescale)")
+        + opt("coherence_reho", "Coherence-ReHo")
+        + opt("mse", "MSE (complexity index)")
+    )
+    options = (f'<optgroup label="Standard (Ajay)">{std_opts}</optgroup>'
+               f'<optgroup label="Additional (Arnav)">{arnav_opts}</optgroup>')
 
     return f'''
 <form method="post" action="{action}" class="card">
@@ -522,6 +702,11 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
   <label>Measure</label>
   <select name="measure" id="measure" onchange="showParams()">{options}</select>
 
+  <div class="row">
+    <div><label>TR (s)</label><input type="number" name="alff_tr" step="0.01" value="{tr}"></div>
+    <div><label>Low (Hz)</label><input type="number" name="alff_low" step="0.001" value="{lo}"></div>
+    <div><label>High (Hz)</label><input type="number" name="alff_high" step="0.001" value="{hi}"></div>
+  </div>
   <div class="pgroup" data-measure="reho">
     <label>Cluster size</label>
     <select name="reho_cluster">
@@ -530,15 +715,17 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
       <option value="27"{rsel("27")}>27 voxels (+ corners)</option>
     </select>
   </div>
-  <div class="pgroup" data-measure="alff falff">
-    <div class="row">
-      <div><label>TR (s)</label><input type="number" name="alff_tr" step="0.01" value="{tr}"></div>
-      <div><label>Low (Hz)</label><input type="number" name="alff_low" step="0.001" value="{lo}"></div>
-      <div><label>High (Hz)</label><input type="number" name="alff_high" step="0.001" value="{hi}"></div>
-    </div>
+  <div class="pgroup" data-measure="int">
+    <label>Max lag (TRs)</label>
+    <input type="number" name="int_max_lag" step="1" value="{max_lag}">
   </div>
-  <div class="pgroup" data-measure="rsfa">
-    <p class="phint">Temporal standard deviation of BOLD. No parameters.</p>
+  <div class="pgroup" data-measure="mse">
+    <label>Scales</label>
+    <input type="text" name="mse_scales" value="{mse_scales}">
+    <div class="row">
+      <div><label>m</label><input type="number" name="mse_m" step="1" value="{mse_m}"></div>
+      <div><label>r</label><input type="number" name="mse_r" step="0.01" value="{mse_r}"></div>
+    </div>
   </div>
 
   <div class="actions"><button class="btn-primary">Regenerate</button></div>
@@ -557,8 +744,9 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
 
 def _slices_png(map3d, affine, measure, symmetric=False, cmap=None):
     cmap = cmap or viz._MEASURE_CMAP.get(measure, "cold_hot")
-    return _fig_to_b64(viz.plot_orientations(
-        map3d, affine, cmap=cmap, symmetric=symmetric))
+    return _fig_to_b64(
+        viz.plot_orientations(map3d, affine, cmap=cmap, symmetric=symmetric)
+    )
 
 
 def _hist_png(map3d, mask):
@@ -593,9 +781,11 @@ def _download_url(measure, mode, sid, cached=None, folder=None, form=None):
     """Build a /download link that recomputes and returns the measure map."""
     q = {"measure": measure, "sid": sid, **_param_args(form)}
     if mode == "single" and cached:
-        q["mode"] = "single"; q["cached"] = cached
+        q["mode"] = "single"
+        q["cached"] = cached
     elif mode in ("folder", "subject") and folder:
-        q["mode"] = "folder"; q["folder"] = folder
+        q["mode"] = "folder"
+        q["folder"] = folder
     else:
         return None
     return "/download?" + urlencode(q)
@@ -603,8 +793,11 @@ def _download_url(measure, mode, sid, cached=None, folder=None, form=None):
 
 def _stats(map3d, mask):
     vals = map3d[mask] if mask is not None else map3d.ravel()
-    return (f"{np.mean(vals):.3f}", f"{np.median(vals):.3f}",
-            f"{int(mask.sum()) if mask is not None else vals.size:,}")
+    return (
+        f"{np.mean(vals):.3f}",
+        f"{np.median(vals):.3f}",
+        f"{int(mask.sum()) if mask is not None else vals.size:,}",
+    )
 
 
 def _compare_pngs(measure, map3d, mask, affine):
@@ -620,65 +813,81 @@ def _compare_pngs(measure, map3d, mask, affine):
         z, z_mask, summary, pct = measure_norm.compare(map3d, mask, ref)
     except Exception as e:
         return None, None, None, None, f"Could not load reference: {e}"
-    compare_png = _fig_to_b64(viz.plot_subject_vs_reference(
-        summary, {"values": ref["summaries"]}))
+    compare_png = _fig_to_b64(
+        viz.plot_subject_vs_reference(summary, {"values": ref["summaries"]})
+    )
     zmap_png, note = None, ""
     if z is not None:
         zmap_png = _slices_png(z, affine, measure, symmetric=True, cmap="cold_hot")
     else:
-        note = (f"Cohort grid {tuple(int(s) for s in ref['shape'])} differs from "
-                f"this subject {map3d.shape}; showing summary percentile only "
-                "(resample to a common space for a voxelwise z-map).")
+        note = (
+            f"Cohort grid {tuple(int(s) for s in ref['shape'])} differs from "
+            f"this subject {map3d.shape}; showing summary percentile only "
+            "(resample to a common space for a voxelwise z-map)."
+        )
     pct_str = "n/a" if pct != pct else f"{pct:.0f}th"
     return compare_png, zmap_png, pct_str, int(ref["n"]), note
 
 
-def _render(sid, measure, map3d, mask, params, notes, affine,
-            mode="single", folder=None, cached=None, form=None):
+def _render(
+    sid,
+    measure,
+    map3d,
+    mask,
+    params,
+    notes,
+    affine,
+    mode="single",
+    folder=None,
+    cached=None,
+    form=None,
+):
     label = measures.MEASURES.get(measure, {}).get("label", measure)
     png = _slices_png(map3d, affine, measure)
     hist_png = _hist_png(map3d, mask)
     mean, median, nvox = _stats(map3d, mask)
     compare_png, zmap_png, comp_pct, comp_n, comp_note = _compare_pngs(
-        measure, map3d, mask, affine)
-    controls = _controls_html(mode, measure, folder=folder, cached=cached,
-                              form=form, sid=sid)
-    download_url = _download_url(measure, mode, sid, cached=cached,
-                                 folder=folder, form=form)
+        measure, map3d, mask, affine
+    )
+    controls = _controls_html(
+        mode, measure, folder=folder, cached=cached, form=form, sid=sid
+    )
+    download_url = _download_url(
+        measure, mode, sid, cached=cached, folder=folder, form=form
+    )
     return render_template_string(
-        RESULT, sid=sid, measure_label=label, measure_key=measure, params=params,
-        map_png=png, hist_png=hist_png, mean=mean, median=median, nvox=nvox,
-        notes=notes, controls=controls, compare_png=compare_png,
-        zmap_png=zmap_png, comp_pct=comp_pct, comp_n=comp_n, comp_note=comp_note,
-        download_url=download_url)
+        RESULT,
+        sid=sid,
+        measure_label=label,
+        measure_key=measure,
+        params=params,
+        map_png=png,
+        hist_png=hist_png,
+        mean=mean,
+        median=median,
+        nvox=nvox,
+        notes=notes,
+        controls=controls,
+        compare_png=compare_png,
+        zmap_png=zmap_png,
+        comp_pct=comp_pct,
+        comp_n=comp_n,
+        comp_note=comp_note,
+        download_url=download_url,
+    )
 
 
 def _render_batch(measure, results, params, notes, folder=None, form=None):
     label = measures.MEASURES.get(measure, {}).get("label", measure)
-    ref_path = measure_norm.default_path(measure)
-    try:
-        ref = measure_norm.load(ref_path) if Path(ref_path).exists() else None
-    except Exception:
-        ref = None
-    view_q = dict(_param_args(form), measure=measure, folder=folder or "")
-    rows = []
-    for sid, map3d, mask, affine in results:
-        mean, median, nvox = _stats(map3d, mask)
-        row = {"sid": sid, "mean": mean, "median": median, "nvox": nvox,
-               "png": _slices_png(map3d, affine, measure), "pct": None,
-               "download_url": _download_url(measure, "folder", sid,
-                                             folder=folder, form=form),
-               "view_url": "/subject?" + urlencode(dict(view_q, sid=sid))}
-        if ref is not None:
-            _z, _zm, _s, pct = measure_norm.compare(map3d, mask, ref)
-            row["pct"] = "n/a" if pct != pct else f"{pct:.0f}th"
-        rows.append(row)
     controls = _controls_html("folder", measure, folder=folder, form=form)
     base_q = dict(_param_args(form), measure=measure, folder=folder or "")
-    download_all_url = "/download-batch?" + urlencode(base_q)
 
     # Group-average map (voxelwise mean across subjects on a common grid).
+    # Only group-level results are surfaced; individual subject maps and
+    # per-subject stats are intentionally withheld to keep the cohort
+    # de-identified.
     group_png = group_hist_png = group_dl_url = None
+    group_mean = group_median = None
     group_note = ""
     ga = _group_average(results)
     if ga is not None:
@@ -686,19 +895,40 @@ def _render_batch(measure, results, params, notes, folder=None, form=None):
         group_png = _slices_png(gmean, gaffine, measure)
         group_hist_png = _hist_png(gmean, gmask)
         group_dl_url = "/download-group?" + urlencode(base_q)
+        gvals = gmean[gmask]
+        if gvals.size:
+            group_mean = f"{np.mean(gvals):.3f}"
+            group_median = f"{np.median(gvals):.3f}"
     elif len(results) >= 2:
-        group_note = ("A voxelwise group average needs all subjects on the same "
-                      "grid/space; these subjects differ, so no average is shown.")
+        group_note = (
+            "A voxelwise group average needs all subjects on the same "
+            "grid/space; these subjects differ, so no average is shown."
+        )
+    elif len(results) == 1:
+        group_note = (
+            "Only one subject was processed; a group average needs at "
+            "least two. Individual maps are not shown."
+        )
 
     return render_template_string(
-        BATCH, n=len(rows), measure_label=label, measure_key=measure,
-        params=params, rows=rows, notes=notes, controls=controls,
-        has_pct=ref is not None, download_all_url=download_all_url,
-        group_png=group_png, group_hist_png=group_hist_png,
-        group_dl_url=group_dl_url, group_note=group_note)
+        BATCH,
+        n=len(results),
+        measure_label=label,
+        measure_key=measure,
+        params=params,
+        notes=notes,
+        controls=controls,
+        group_png=group_png,
+        group_hist_png=group_hist_png,
+        group_dl_url=group_dl_url,
+        group_note=group_note,
+        group_mean=group_mean,
+        group_median=group_median,
+    )
 
 
 # ---- routes -----------------------------------------------------------
+
 
 @app.route("/")
 def index():
@@ -746,8 +976,9 @@ def run():
             notes += f"Showing first {MAX_BATCH}; {extra} more not processed. "
         if skipped:
             notes += f"Skipped {len(skipped)}: " + "; ".join(skipped)
-        return _render_batch(measure, results, params, notes,
-                             folder=folder, form=request.form)
+        return _render_batch(
+            measure, results, params, notes, folder=folder, form=request.form
+        )
 
     # Single-subject: use a cached upload if present (measure switch), else the
     # newly uploaded file, saved to the cache so later switches need no re-upload.
@@ -773,8 +1004,18 @@ def run():
         map3d, mask, params, _c, _d = _compute(measure, bold, request.form)
     except Exception as e:
         return _page_error(str(e))
-    return _render(sid, measure, map3d, mask, params, notes="", affine=img.affine,
-                   mode="single", cached=cached, form=request.form)
+    return _render(
+        sid,
+        measure,
+        map3d,
+        mask,
+        params,
+        notes="",
+        affine=img.affine,
+        mode="single",
+        cached=cached,
+        form=request.form,
+    )
 
 
 def _synthetic_bold(dim=28, T=120, seed=0):
@@ -797,8 +1038,7 @@ def _synthetic_bold(dim=28, T=120, seed=0):
     for _ in range(6):
         cx, cy, cz = rng.uniform(dim * 0.30, dim * 0.70, size=3)
         sig = rng.uniform(dim * 0.10, dim * 0.20)
-        blob = np.exp(-(((a - cx) ** 2 + (b - cy) ** 2 + (c - cz) ** 2)
-                        / (2 * sig ** 2)))
+        blob = np.exp(-(((a - cx) ** 2 + (b - cy) ** 2 + (c - cz) ** 2) / (2 * sig**2)))
         freq = rng.uniform(0.012, 0.09)
         phase = rng.uniform(0, 2 * np.pi)
         tc = np.sin(2 * np.pi * freq * t + phase)
@@ -811,67 +1051,25 @@ def _synthetic_bold(dim=28, T=120, seed=0):
 
 @app.route("/subject", methods=["GET", "POST"])
 def subject():
-    """Full single-subject view for one subject inside a folder upload."""
-    src = request.values
-    folder = src.get("folder", "")
-    sid = src.get("sid", "")
-    measure = src.get("measure", "reho")
-    try:
-        bolds = io.find_subject_bolds(folder)
-    except Exception:
-        return _page_error("Folder not found.")
-    path = bolds.get(sid)
-    if path is None:
-        return _page_error(f"Subject '{sid}' not found in {folder}.")
-    img = io.load_nifti(path)
-    bold = np.asarray(img.get_fdata())
-    if bold.ndim != 4:
-        return _page_error(f"BOLD must be 4D; got {bold.shape}.")
-    try:
-        map3d, mask, params, _c, _d = _compute(measure, bold, src)
-    except Exception as e:
-        return _page_error(str(e))
-    return _render(sid, measure, map3d, mask, params, notes="",
-                   affine=img.affine, mode="subject", folder=folder, form=src)
+    """Individual subject views are withheld for folder cohorts.
+
+    To keep a cohort de-identified, single-subject maps and per-subject stats
+    are not exposed for folder uploads; only the group average is available.
+    """
+    return _page_error(
+        "Individual subject views are disabled for folder cohorts. Only the "
+        "group average is shown, to keep the cohort de-identified."
+    )
 
 
 @app.route("/download-batch")
 def download_batch():
-    """Zip of every subject's measure map for a folder + measure."""
-    import zipfile
-    import nibabel as nib
+    """Withheld: per-subject maps are not downloadable for a folder cohort.
 
-    folder = request.args.get("folder", "")
-    measure = request.args.get("measure", "reho")
-    params = {
-        "cluster": request.args.get("reho_cluster", 27),
-        "tr": request.args.get("alff_tr", 2.0),
-        "low": request.args.get("alff_low", 0.01),
-        "high": request.args.get("alff_high", 0.08),
-    }
-    try:
-        bolds = io.find_subject_bolds(folder)
-    except Exception:
-        abort(404)
-    if not bolds:
-        abort(404)
-
-    zip_path = CACHE_DIR / f"{measure}_maps.zip"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for sid, path in list(bolds.items())[:MAX_BATCH]:
-            try:
-                img = io.load_nifti(path)
-                bold = np.asarray(img.get_fdata())
-                if bold.ndim != 4:
-                    continue
-                m, _mask = measures.compute(measure, bold, params)
-                out = CACHE_DIR / f"{sid}_{measure}.nii.gz"
-                nib.save(nib.Nifti1Image(m.astype(np.float32), img.affine), str(out))
-                zf.write(str(out), arcname=f"{sid}_{measure}.nii.gz")
-            except Exception:
-                continue
-    return send_file(str(zip_path), as_attachment=True,
-                     download_name=f"{measure}_maps.zip")
+    Only the group average (see /download-group) is available, to keep the
+    cohort de-identified.
+    """
+    abort(403)
 
 
 @app.route("/download-group")
@@ -883,7 +1081,7 @@ def download_group():
     measure = request.args.get("measure", "reho")
     params = {
         "cluster": request.args.get("reho_cluster", 27),
-        "tr": request.args.get("alff_tr", 2.0),
+        "tr": request.args.get("alff_tr", 0.72),
         "low": request.args.get("alff_low", 0.01),
         "high": request.args.get("alff_high", 0.08),
     }
@@ -904,7 +1102,8 @@ def download_group():
                 shape, affine = m.shape, img.affine
             elif m.shape != shape:
                 continue
-            maps.append(m); masks.append(mask)
+            maps.append(m)
+            masks.append(mask)
         except Exception:
             continue
     if len(maps) < 2:
@@ -915,8 +1114,9 @@ def download_group():
         gmean = np.nan_to_num(np.nanmean(np.where(mstack, stack, np.nan), axis=0))
     out = CACHE_DIR / f"group_{measure}_average.nii.gz"
     nib.save(nib.Nifti1Image(gmean.astype(np.float32), affine), str(out))
-    return send_file(str(out), as_attachment=True,
-                     download_name=f"group_{measure}_average.nii.gz")
+    return send_file(
+        str(out), as_attachment=True, download_name=f"group_{measure}_average.nii.gz"
+    )
 
 
 @app.route("/download")
@@ -929,21 +1129,15 @@ def download():
     sid = request.args.get("sid", "subject")
     params = {
         "cluster": request.args.get("reho_cluster", 27),
-        "tr": request.args.get("alff_tr", 2.0),
+        "tr": request.args.get("alff_tr", 0.72),
         "low": request.args.get("alff_low", 0.01),
         "high": request.args.get("alff_high", 0.08),
     }
 
     if mode == "folder":
-        folder = request.args.get("folder", "")
-        try:
-            bolds = io.find_subject_bolds(folder)
-        except Exception:
-            abort(404)
-        path = bolds.get(sid)
-        if path is None:
-            abort(404)
-        img = io.load_nifti(path)
+        # Individual maps from a folder cohort are withheld (de-identification);
+        # only the group average is downloadable.
+        abort(403)
     else:
         cached = request.args.get("cached", "")
         path = CACHE_DIR / cached
@@ -960,8 +1154,9 @@ def download():
     out_img = nib.Nifti1Image(m.astype(np.float32), img.affine)
     out_path = CACHE_DIR / f"{sid}_{measure}.nii.gz"
     nib.save(out_img, str(out_path))
-    return send_file(str(out_path), as_attachment=True,
-                     download_name=f"{sid}_{measure}.nii.gz")
+    return send_file(
+        str(out_path), as_attachment=True, download_name=f"{sid}_{measure}.nii.gz"
+    )
 
 
 @app.route("/pick-folder")
@@ -977,11 +1172,13 @@ def pick_folder():
     import sys
 
     if platform.system() == "Darwin":
-        script = ('POSIX path of (choose folder with prompt '
-                  '"Select the subjects folder")')
+        script = (
+            'POSIX path of (choose folder with prompt "Select the subjects folder")'
+        )
         try:
-            out = subprocess.run(["osascript", "-e", script],
-                                 capture_output=True, text=True, timeout=300)
+            out = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True, timeout=300
+            )
             # Non-zero return with "User canceled" is a normal cancel.
             return {"path": out.stdout.strip()}
         except Exception as e:
@@ -993,11 +1190,108 @@ def pick_folder():
         "p=filedialog.askdirectory();print(p or '')"
     )
     try:
-        out = subprocess.run([sys.executable, "-c", code],
-                             capture_output=True, text=True, timeout=300)
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=300
+        )
         return {"path": out.stdout.strip()}
     except Exception as e:
         return {"path": "", "error": str(e)}
+
+
+def _roi_bar_png(roi_values):
+    """Bar chart of mean FA per parcel (NaN regions shown as gaps)."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7, 2.8))
+    x = np.arange(roi_values.size)
+    ax.bar(x, np.nan_to_num(roi_values), color="#3b82c4", width=1.0)
+    ax.set_xlabel("region")
+    ax.set_ylabel("mean FA")
+    ax.set_xlim(-0.5, roi_values.size - 0.5)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    return _fig_to_b64(fig)
+
+
+@app.route("/fa", methods=["POST"])
+def fa_analyze():
+    """Analyze an uploaded FA map at a chosen threshold.
+
+    Applies the FA threshold, renders the thresholded FA map + histogram + basic
+    stats, and (if an atlas is supplied) regional mean FA. The FA map and atlas
+    are cached so the results-page slider can re-threshold without re-uploading.
+    """
+    thr = float(request.form.get("fa_threshold", 0.20) or 0.0)
+    sid = request.form.get("sid") or "FA subject"
+
+    # Reuse cached uploads on a slider re-threshold, else take fresh uploads.
+    cached_fa = request.form.get("cached_fa") or ""
+    cached_atlas = request.form.get("cached_atlas") or ""
+    if cached_fa:
+        fa_p = CACHE_DIR / cached_fa
+        if not fa_p.exists():
+            return _page_error("Cached FA map expired — please upload it again.")
+    else:
+        fs = request.files.get("fa")
+        if fs is None or fs.filename == "":
+            return _page_error("An FA map (3D NIfTI) is required.")
+        cached_fa = uuid.uuid4().hex + "_" + Path(fs.filename).name
+        fa_p = CACHE_DIR / cached_fa
+        fs.save(str(fa_p))
+        atlas_fs = request.files.get("atlas")
+        if atlas_fs is not None and atlas_fs.filename != "":
+            cached_atlas = uuid.uuid4().hex + "_" + Path(atlas_fs.filename).name
+            atlas_fs.save(str(CACHE_DIR / cached_atlas))
+
+    try:
+        fa_img = io.load_nifti(fa_p)
+        fa_map = np.asarray(fa_img.get_fdata(), dtype=float)
+    except Exception as e:
+        return _page_error(f"Could not read FA map: {e}")
+    if fa_map.ndim != 3:
+        return _page_error(f"FA map must be 3D (X,Y,Z); got shape {fa_map.shape}.")
+
+    brain = fa_map > 0  # nonzero FA ~ within-brain support
+    thr_map = fa_mod.apply_threshold(fa_map, thr)
+    kept = thr_map > 0
+    map_png = _slices_png(thr_map, fa_img.affine, "fa", cmap="magma")
+    hist_png = _hist_png(thr_map, kept)
+    mean = f"{thr_map[kept].mean():.3f}" if kept.any() else "n/a"
+    nvox = f"{int(kept.sum()):,}"
+    pct_kept = f"{100.0 * kept.sum() / brain.sum():.1f}%" if brain.any() else "n/a"
+
+    roi_png, roi_note, n_regions = None, "", 0
+    if cached_atlas:
+        try:
+            labels = np.asarray(io.load_nifti_data(CACHE_DIR / cached_atlas))
+            if labels.shape != fa_map.shape:
+                roi_note = (
+                    f"Atlas shape {labels.shape} does not match the FA "
+                    f"map {fa_map.shape}; regional FA skipped."
+                )
+            else:
+                roi = fa_mod.roi_fa(fa_map, labels, fa_threshold=thr)
+                n_regions = int(roi.size)
+                roi_png = _roi_bar_png(roi)
+        except Exception as e:
+            roi_note = f"Could not compute regional FA: {e}"
+
+    return render_template_string(
+        FA_RESULT,
+        sid=sid,
+        thr=f"{thr:.2f}",
+        cached_fa=cached_fa,
+        cached_atlas=cached_atlas,
+        map_png=map_png,
+        hist_png=hist_png,
+        mean=mean,
+        nvox=nvox,
+        pct_kept=pct_kept,
+        roi_png=roi_png,
+        roi_note=roi_note,
+        n_regions=n_regions,
+        error=None,
+    )
 
 
 @app.route("/demo", methods=["POST"])
@@ -1006,27 +1300,32 @@ def demo():
     bold = _synthetic_bold()
     dim = bold.shape[0]
     off = -(dim / 2) * 3.0
-    affine = np.array([[3, 0, 0, off], [0, 3, 0, off],
-                       [0, 0, 3, off], [0, 0, 0, 1]], dtype=float)
+    affine = np.array(
+        [[3, 0, 0, off], [0, 3, 0, off], [0, 0, 3, off], [0, 0, 0, 1]], dtype=float
+    )
     note = "Synthetic BOLD — demonstrates the layout, not real biology."
-    if measure in ("alff", "falff"):
-        alff, falff, mask = measures.alff_falff(bold, tr=2.0, band=(0.01, 0.08))
-        m = alff if measure == "alff" else falff
-        params = "TR 2.0s, band 0.01-0.08 Hz"
-    elif measure == "rsfa":
-        m, mask = measures.rsfa(bold)
-        params = "temporal std of BOLD"
-    elif measure == "reho":
-        m, mask = measures.reho(bold, cluster=27)
-        params = "cluster 27"
-    else:
+    if measure not in measures.MEASURES:
         return _page_error(f"unknown demo measure: {measure}")
-    return _render("DEMO (synthetic)", measure, m, mask, params, note,
-                   affine=affine, mode="demo", form=request.form)
+    try:
+        m, mask, params, _c, _d = _compute(measure, bold, request.form)
+    except Exception as e:
+        return _page_error(str(e))
+    return _render(
+        "DEMO (synthetic)",
+        measure,
+        m,
+        mask,
+        params,
+        note,
+        affine=affine,
+        mode="demo",
+        form=request.form,
+    )
 
 
 def main():
     import webbrowser
+
     url = "http://127.0.0.1:5000"
     print(f"Structure-Function Toolbox running at {url}  (Ctrl+C to stop)")
     try:

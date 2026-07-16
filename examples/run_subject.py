@@ -19,8 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-from sftoolbox.config import Config, DEFAULT
-from sftoolbox import io, fmri, fa, coupling, pipeline, reference, viz
+from sftoolbox import coupling, fmri, io, pipeline, viz
+from sftoolbox.config import DEFAULT, Config
 
 
 def _make_synthetic(tmp: Path, n_regions=10, n_vols=120, dim=12):
@@ -67,7 +67,8 @@ def run_synthetic():
         # Stand in a synthetic structural matrix to exercise coupling wiring
         # (real FA-SC needs a tractogram + dipy; see run on real data).
         rng = np.random.default_rng(1)
-        struct = rng.random((n, n)); struct = (struct + struct.T) / 2
+        struct = rng.random((n, n))
+        struct = (struct + struct.T) / 2
         np.fill_diagonal(struct, 0.0)
         val = coupling.coupling(struct, fc, cfg)
         print(f"global coupling (synthetic struct vs real-ish FC): {val:.3f}")
@@ -77,10 +78,13 @@ def run_synthetic():
         viz.plot_fc_vs_fa(fc, struct, out_path=out / "synthetic_fc_vs_fa.png")
         cohort = rng.normal(0.1, 0.05, size=200)
         ref = {"values": cohort}
-        viz.plot_subject_vs_reference(val, ref,
-                                      out_path=out / "synthetic_subject_vs_hcp.png")
-        print(f"Figures written to {out}/  (synthetic_fc_vs_fa.png, "
-              "synthetic_subject_vs_hcp.png)")
+        viz.plot_subject_vs_reference(
+            val, ref, out_path=out / "synthetic_subject_vs_hcp.png"
+        )
+        print(
+            f"Figures written to {out}/  (synthetic_fc_vs_fa.png, "
+            "synthetic_subject_vs_hcp.png)"
+        )
         print("Synthetic end-to-end run OK.")
 
 

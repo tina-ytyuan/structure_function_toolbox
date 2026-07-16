@@ -15,8 +15,11 @@ import argparse
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dev", action="store_true",
-                    help="use fetch_development_fmri instead of fetch_adhd")
+    ap.add_argument(
+        "--dev",
+        action="store_true",
+        help="use fetch_development_fmri instead of fetch_adhd",
+    )
     args = ap.parse_args()
 
     from nilearn import datasets  # nilearn is a project dependency
@@ -32,8 +35,10 @@ def main():
 
     print(f"\nDataset: {kind}")
     print(f"BOLD 4D NIfTI: {bold_path}")
-    print("\nUpload that file in the app's 'Cleaned BOLD' field, pick a measure, "
-          "and Generate.")
+    print(
+        "\nUpload that file in the app's 'Cleaned BOLD' field, pick a measure, "
+        "and Generate."
+    )
 
 
 if __name__ == "__main__":

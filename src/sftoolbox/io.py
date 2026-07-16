@@ -20,18 +20,19 @@ class Subject:
 
     subject_id: str
     root: Path
-    bold_path: Path | None = None          # cleaned resting-state fMRI (4D NIfTI)
-    fa_path: Path | None = None            # precomputed FA map (3D NIfTI), optional
-    dwi_path: Path | None = None           # preprocessed diffusion (4D NIfTI)
-    bval_path: Path | None = None          # b-values (FSL .bval)
-    bvec_path: Path | None = None          # b-vectors (FSL .bvec)
-    dwi_mask_path: Path | None = None      # brain mask for diffusion (3D NIfTI)
-    tractogram_path: Path | None = None    # streamlines (.trk / .tck), for FA-SC
-    t1_path: Path | None = None            # T1w (optional extension)
+    bold_path: Path | None = None  # cleaned resting-state fMRI (4D NIfTI)
+    fa_path: Path | None = None  # precomputed FA map (3D NIfTI), optional
+    dwi_path: Path | None = None  # preprocessed diffusion (4D NIfTI)
+    bval_path: Path | None = None  # b-values (FSL .bval)
+    bvec_path: Path | None = None  # b-vectors (FSL .bvec)
+    dwi_mask_path: Path | None = None  # brain mask for diffusion (3D NIfTI)
+    tractogram_path: Path | None = None  # streamlines (.trk / .tck), for FA-SC
+    t1_path: Path | None = None  # T1w (optional extension)
 
     @classmethod
-    def from_dir(cls, subject_id: str, root: str | Path,
-                 layout: dict | None = None) -> "Subject":
+    def from_dir(
+        cls, subject_id: str, root: str | Path, layout: dict | None = None
+    ) -> Subject:
         """Build a Subject by resolving expected filenames under ``root``.
 
         ``layout`` maps field names to filename patterns (glob), letting the
@@ -64,8 +65,10 @@ class Subject:
 
 # --- Low-level loaders -------------------------------------------------
 
-def find_subject_bolds(root: str | Path,
-                       pattern: str = "*bold*.nii*") -> dict[str, Path]:
+
+def find_subject_bolds(
+    root: str | Path, pattern: str = "*bold*.nii*"
+) -> dict[str, Path]:
     """Discover BOLD files for a folder of subjects.
 
     Handles two common layouts:
@@ -117,8 +120,10 @@ def load_bvals_bvecs(bval_path, bvec_path):
 
 # --- Conformance -------------------------------------------------------
 
-def validate_conformance(subject: Subject, config,
-                         expected_regions: int | None = None) -> list[str]:
+
+def validate_conformance(
+    subject: Subject, config, expected_regions: int | None = None
+) -> list[str]:
     """Check a subject matches the input contract.
 
     Returns a list of human-readable problems (empty == conformant). This is

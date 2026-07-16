@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import argparse
 
+from sftoolbox import compare, io, pipeline, reference
 from sftoolbox.config import DEFAULT
-from sftoolbox import io, pipeline, reference, compare
 
 
 def main():

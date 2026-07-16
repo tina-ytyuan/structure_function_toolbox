@@ -14,6 +14,9 @@ and compares.
 
 Every subject — HCP or a user's own — runs through the *same* extraction path:
 
+0. **Voxelwise fMRI measures** (ALFF, fALFF, ReHo, RSFA) — `sftoolbox/fmri_measures.py`,
+   vendored verbatim from Ajay's DPABI-matched DCC code so the toolbox computes
+   them exactly as the team does. `sftoolbox/measures.py` is a thin adapter over it.
 1. **Functional connectivity** from cleaned rs-fMRI — `sftoolbox/fmri.py`
 2. **FA-weighted structural connectivity** from diffusion — `sftoolbox/fa.py`
 3. **Structure-function coupling** metric — `sftoolbox/coupling.py`
@@ -49,6 +52,16 @@ python -m sftoolbox.webapp       # opens http://127.0.0.1:5000
 Upload a subject's atlas + BOLD (and optionally an FA map + tractogram) to
 generate connectivity, coupling, and the cohort comparison. Click **Run demo**
 to see the whole flow on synthetic data first.
+
+The **FA** panel takes a precomputed FA map (and an optional atlas for regional
+FA) and exposes an **FA-threshold slider**: voxels below the threshold are
+treated as non-white-matter and excluded. Drag the slider on the results page to
+re-threshold without re-uploading (0.20 is the conventional white-matter cutoff).
+
+**Cohort de-identification.** A folder (batch) upload reports *group-level*
+results only — the group-average map, its statistics, and the subject count.
+Individual subject maps and per-subject statistics are intentionally withheld
+(the per-subject views and downloads are disabled).
 
 The compare panel uses a saved HCP reference at `outputs/hcp_reference.npz`
 (auto-loaded if present). Build it once:
@@ -110,6 +123,24 @@ Both live in `sftoolbox/config.py`.
 pip install -e .            # or: pip install -r requirements.txt
 pytest                      # runs the coupling + comparison tests
 ```
+
+## Development
+
+Formatting and linting use **ruff** (configured in `pyproject.toml`). Install
+the dev tools and run:
+
+```bash
+pip install -e ".[dev]"     # ruff + pytest
+ruff format .               # auto-format all code (consistent style)
+ruff check .                # lint: unused imports/vars, import order, etc.
+ruff check --fix .          # apply the safe lint fixes automatically
+```
+
+Lint is scoped to real problems (pyflakes, import sorting, pyupgrade, bugbear);
+whitespace and line length are left to `ruff format`. Run `ruff format .` before
+committing so diffs stay clean across the team. Note that the first
+`ruff format .` will reflow the existing compact style, so preview it with
+`ruff format --diff .` if you want to see the changes first.
 
 ## Layout
 

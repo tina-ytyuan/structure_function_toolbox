@@ -43,27 +43,56 @@ def compute_fa_map(dwi_data: np.ndarray, bvals, bvecs, mask=None) -> np.ndarray:
     tenmodel = TensorModel(gtab, fit_method="WLS")
     tenfit = tenmodel.fit(dwi_data, mask=mask)
     fa = np.asarray(tenfit.fa)
-    fa[~np.isfinite(fa)] = 0.0            # tensor fit can yield NaNs in CSF/air
+    fa[~np.isfinite(fa)] = 0.0  # tensor fit can yield NaNs in CSF/air
     return np.clip(fa, 0.0, 1.0)
 
 
-def roi_fa(fa_map: np.ndarray, labels_3d: np.ndarray) -> np.ndarray:
+def apply_threshold(fa_map: np.ndarray, fa_threshold: float = 0.0) -> np.ndarray:
+    """Zero out voxels with FA below ``fa_threshold``.
+
+    FA below ~0.2 is typically not coherent white matter, so a threshold keeps
+    grey-matter / CSF / partial-volume voxels from diluting FA measures. Returns
+    a copy; the input is not modified. ``fa_threshold=0`` is a no-op.
+    """
+    if fa_threshold <= 0.0:
+        return np.asarray(fa_map, dtype=float)
+    out = np.asarray(fa_map, dtype=float).copy()
+    out[out < fa_threshold] = 0.0
+    return out
+
+
+def roi_fa(
+    fa_map: np.ndarray, labels_3d: np.ndarray, fa_threshold: float = 0.0
+) -> np.ndarray:
     """Mean FA within each parcel -> (N,) node-feature vector.
 
     Useful directly (regional white-matter FA) and as a building block.
     Pure numpy; no dipy needed.
+
+    If ``fa_threshold`` > 0, only voxels at or above it contribute to a region's
+    mean (sub-threshold voxels are considered non-white-matter). A region with
+    no surviving voxels yields NaN.
     """
-    region_ids = np.unique(np.rint(labels_3d).astype(int))
+    labels = np.rint(labels_3d).astype(int)
+    region_ids = np.unique(labels)
     region_ids = region_ids[region_ids != 0]
     out = np.zeros(region_ids.size, dtype=float)
     for i, rid in enumerate(region_ids):
-        mask = np.rint(labels_3d).astype(int) == rid
+        mask = labels == rid
+        if fa_threshold > 0.0:
+            mask = mask & (fa_map >= fa_threshold)
         out[i] = fa_map[mask].mean() if mask.any() else np.nan
     return out
 
 
-def fa_weighted_connectivity(streamlines, affine, labels_3d, fa_map,
-                             n_regions: int | None = None) -> np.ndarray:
+def fa_weighted_connectivity(
+    streamlines,
+    affine,
+    labels_3d,
+    fa_map,
+    n_regions: int | None = None,
+    fa_threshold: float = 0.0,
+) -> np.ndarray:
     """N x N structural matrix: mean FA sampled along streamlines per region pair.
 
     For each streamline, its two endpoints fall in parcels (i, j). We sample FA
@@ -77,9 +106,15 @@ def fa_weighted_connectivity(streamlines, affine, labels_3d, fa_map,
     labels_3d : (X, Y, Z) integer atlas (0 = background, 1..N = regions).
     fa_map : (X, Y, Z) FA volume aligned to ``labels_3d``.
     n_regions : number of regions N (inferred from labels if None).
+    fa_threshold : if > 0, FA samples below this along a streamline are ignored
+        (treated as non-white-matter) rather than pulling the edge weight down.
     """
-    from dipy.tracking.utils import connectivity_matrix
     from dipy.tracking.streamline import values_from_volume
+    from dipy.tracking.utils import connectivity_matrix
+
+    # Sub-threshold voxels -> NaN so per-streamline nanmean skips them.
+    if fa_threshold > 0.0:
+        fa_map = np.where(np.asarray(fa_map) >= fa_threshold, fa_map, np.nan)
 
     labels = np.rint(labels_3d).astype(np.int_)
     if n_regions is None:
@@ -88,19 +123,22 @@ def fa_weighted_connectivity(streamlines, affine, labels_3d, fa_map,
 
     # Map each region-pair to the streamlines connecting them.
     _, mapping = connectivity_matrix(
-        streamlines, affine, labels,
-        return_mapping=True, mapping_as_streamlines=True,
+        streamlines,
+        affine,
+        labels,
+        return_mapping=True,
+        mapping_as_streamlines=True,
         symmetric=True,
     )
 
     fa_sc = np.zeros((n_regions, n_regions), dtype=float)
     for (i, j), strls in mapping.items():
         if i == 0 or j == 0 or not len(strls):
-            continue                       # skip background and empty pairs
+            continue  # skip background and empty pairs
         # Mean FA along each streamline, then mean across streamlines.
         per_strl = [np.nanmean(v) for v in values_from_volume(fa_map, strls, affine)]
         w = float(np.nanmean(per_strl)) if per_strl else 0.0
-        a, b = i - 1, j - 1                # labels are 1-based -> 0-based indices
+        a, b = i - 1, j - 1  # labels are 1-based -> 0-based indices
         fa_sc[a, b] = w
         fa_sc[b, a] = w
     return fa_sc
@@ -129,8 +167,11 @@ def fa_structural_connectivity(subject, labels_3d, config) -> np.ndarray:
     elif subject.dwi_path is not None:
         dwi_img = _io.load_nifti(subject.dwi_path)
         bvals, bvecs = _io.load_bvals_bvecs(subject.bval_path, subject.bvec_path)
-        mask = (_io.load_nifti_data(subject.dwi_mask_path).astype(bool)
-                if subject.dwi_mask_path else None)
+        mask = (
+            _io.load_nifti_data(subject.dwi_mask_path).astype(bool)
+            if subject.dwi_mask_path
+            else None
+        )
         fa_map = compute_fa_map(np.asarray(dwi_img.get_fdata()), bvals, bvecs, mask)
         affine = dwi_img.affine
     else:
@@ -141,7 +182,11 @@ def fa_structural_connectivity(subject, labels_3d, config) -> np.ndarray:
 
     from dipy.io.streamline import load_tractogram
 
-    sft = load_tractogram(str(subject.tractogram_path), reference="same",
-                          bbox_valid_check=False)
+    sft = load_tractogram(
+        str(subject.tractogram_path), reference="same", bbox_valid_check=False
+    )
     sft.to_rasmm()
-    return fa_weighted_connectivity(sft.streamlines, affine, labels_3d, fa_map)
+    fa_threshold = float(getattr(config, "fa_threshold", 0.0) or 0.0)
+    return fa_weighted_connectivity(
+        sft.streamlines, affine, labels_3d, fa_map, fa_threshold=fa_threshold
+    )

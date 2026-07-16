@@ -13,20 +13,21 @@ from . import fmri as _fmri
 from . import io as _io
 
 
-def extract_functional(subject: "_io.Subject", labels_3d, config):
+def extract_functional(subject: _io.Subject, labels_3d, config):
     """Load BOLD, parcellate, return functional connectivity matrix."""
     bold = _io.load_nifti_data(subject.bold_path)
     ts = _fmri.region_timeseries(bold, labels_3d)
     return _fmri.functional_connectivity(ts, config)
 
 
-def extract_structural(subject: "_io.Subject", labels_3d, config):
+def extract_structural(subject: _io.Subject, labels_3d, config):
     """Return FA-weighted structural connectivity matrix."""
     return _fa.fa_structural_connectivity(subject, labels_3d, config)
 
 
-def extract_subject(subject: "_io.Subject", labels_3d, config,
-                    expected_regions: int | None = None):
+def extract_subject(
+    subject: _io.Subject, labels_3d, config, expected_regions: int | None = None
+):
     """Run the full path for one subject and return its coupling value(s).
 
     Raises loudly if the subject does not conform to the input contract.

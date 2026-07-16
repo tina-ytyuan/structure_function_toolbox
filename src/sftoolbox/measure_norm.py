@@ -17,16 +17,16 @@ from pathlib import Path
 import numpy as np
 
 
-def build(measure: str, maps: list[np.ndarray], masks: list[np.ndarray],
-          out_path: str) -> dict:
+def build(
+    measure: str, maps: list[np.ndarray], masks: list[np.ndarray], out_path: str
+) -> dict:
     """Build and save a normative reference from per-subject maps + masks."""
-    arr = np.stack([np.asarray(m, float) for m in maps])        # (S, X, Y, Z)
-    msk = np.stack([np.asarray(m, bool) for m in masks])        # (S, X, Y, Z)
+    arr = np.stack([np.asarray(m, float) for m in maps])  # (S, X, Y, Z)
+    msk = np.stack([np.asarray(m, bool) for m in masks])  # (S, X, Y, Z)
     group_mask = msk.all(axis=0)
     mean_map = arr.mean(axis=0)
     sd_map = arr.std(axis=0, ddof=1) if arr.shape[0] > 1 else np.zeros_like(mean_map)
-    summaries = np.array([a[m].mean() if m.any() else np.nan
-                          for a, m in zip(arr, msk)])
+    summaries = np.array([a[m].mean() if m.any() else np.nan for a, m in zip(arr, msk)])
     ref = {
         "measure": measure,
         "shape": np.array(mean_map.shape),

@@ -21,8 +21,7 @@ from pathlib import Path
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=4, help="number of subjects (max 40)")
-    ap.add_argument("--out", default="~/sft_test_subjects",
-                    help="destination folder")
+    ap.add_argument("--out", default="~/sft_test_subjects", help="destination folder")
     args = ap.parse_args()
 
     from nilearn import datasets  # project dependency
@@ -43,8 +42,10 @@ def main():
         print(f"  {sid}  ->  {target}")
 
     print(f"\nDone. Subjects folder:\n  {dest}\n")
-    print("In the app: Input mode = 'Folder of subjects' -> Choose folder -> "
-          "select the folder above.")
+    print(
+        "In the app: Input mode = 'Folder of subjects' -> Choose folder -> "
+        "select the folder above."
+    )
 
 
 if __name__ == "__main__":

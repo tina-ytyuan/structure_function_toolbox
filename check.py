@@ -15,8 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
+from sftoolbox import compare, coupling, fa, fmri, io, reference
 from sftoolbox.config import Config
-from sftoolbox import coupling, reference, compare, fa, fmri, io
 
 _failures = []
 
@@ -104,6 +104,23 @@ def main():
     check(
         "roi_fa returns per-region means",
         out.shape == (2,) and abs(out[0] - 0.3) < 1e-9 and abs(out[1] - 0.7) < 1e-9,
+    )
+
+    # 7b. roi_fa with an FA threshold: sub-threshold voxels are excluded.
+    #     Region 1 (all FA=0.3) drops below thr=0.5 -> NaN; region 2 (0.7) stays.
+    thr_out = fa.roi_fa(fa_map, labels, fa_threshold=0.5)
+    check(
+        "roi_fa fa_threshold excludes sub-threshold voxels",
+        np.isnan(thr_out[0]) and abs(thr_out[1] - 0.7) < 1e-9,
+    )
+
+    # 7c. apply_threshold zeros sub-threshold voxels and is a no-op at 0.
+    at = fa.apply_threshold(fa_map, 0.5)
+    check(
+        "apply_threshold zeros below cutoff, keeps above",
+        (at[0] == 0).all()
+        and abs(at[1].mean() - 0.7) < 1e-9
+        and (fa.apply_threshold(fa_map, 0.0) == fa_map).all(),
     )
 
     # 8. Functional pipeline end-to-end on synthetic NIfTIs (needs nibabel).

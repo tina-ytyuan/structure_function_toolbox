@@ -19,10 +19,34 @@ dependencies = [
     "dipy>=1.7",
     "matplotlib>=3.6",
     "flask>=2.2",
+    "antropy>=0.1.6",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.1"]
+
+[tool.pytest.ini_options]
+# Only collect the toolbox's own tests, not vendored/scratch comparison copies.
+testpaths = ["tests"]
+
+[tool.ruff]
+# Match the project's Python floor and layout.
+target-version = "py39"
+line-length = 88
+src = ["src", "tests", "scripts", "examples"]
+# Never lint the scratch copy of teammates' DCC code.
+extend-exclude = ["_dcc_compare"]
+
+[tool.ruff.lint]
+# Layout/whitespace/line-length (pycodestyle E/W) are intentionally left to
+# `ruff format`, so lint stays focused on real problems rather than fighting
+# the code's compact style: pyflakes (F, real bugs / unused names), import
+# sorting (I), pyupgrade (UP), and a few bugbear checks (B).
+select = ["F", "I", "UP", "B"]
+
+[tool.ruff.format]
+# Consistent, black-compatible formatting so the team's diffs stay clean.
+quote-style = "double"
 
 [tool.setuptools.packages.find]
 where = ["src"]
