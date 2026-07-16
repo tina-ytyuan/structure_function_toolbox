@@ -22,8 +22,8 @@ mkdir -p slurm_logs
 PROJECT_DIR=/hpc/group/396-brainfun26
 RUN=Rest1LR                                   # which HCP run to use
 SUBJECTS_ROOT="$PROJECT_DIR/data/$RUN"        # folder of *_finproc.nii.gz
-OUT_DIR="$PROJECT_DIR/yy500/refs"             # where references are written
-CONDA_ENV=sft                                 # conda env name
+OUT_DIR="$PROJECT_DIR/tina/refs"              # where references are written
+MASK="$PROJECT_DIR/data/final_mask.nii"       # group mask applied to every subject
 PATTERN='*_finproc.nii.gz'
 TR=0.72
 # LIMIT: set to a small number for a quick test, or leave empty for all subjects
@@ -38,8 +38,8 @@ fi
 echo "Job $SLURM_JOB_ID on $(hostname) | start $(date)"
 echo "Subjects: $SUBJECTS_ROOT | out: $OUT_DIR | measures: ${MEASURES[*]}"
 
-module load Anaconda3 2>/dev/null || true
-source activate "$CONDA_ENV" 2>/dev/null || conda activate "$CONDA_ENV"
+# Activate the project's virtualenv (created with: python3 -m venv .venv).
+source .venv/bin/activate
 
 mkdir -p "$OUT_DIR"
 LIMIT_ARG=""
@@ -52,6 +52,7 @@ for M in "${MEASURES[@]}"; do
         --pattern "$PATTERN" \
         --measure "$M" \
         --tr "$TR" \
+        --mask "$MASK" \
         $LIMIT_ARG \
         --out "$OUT_DIR/measure_ref_${M}.npz"
 done

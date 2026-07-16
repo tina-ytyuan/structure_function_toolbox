@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import argparse
 
+import numpy as np
+
 from sftoolbox import io, measure_norm, measures
 
 
@@ -42,6 +44,12 @@ def main():
         help="Any measure key (Ajay's four or Arnav's additions)",
     )
     ap.add_argument("--out")
+    ap.add_argument(
+        "--mask",
+        help="3D NIfTI mask applied to every subject (e.g. the group's "
+             "final_mask.nii). Voxels != 0 are kept. Defaults to a per-subject "
+             "finite/nonzero mask when omitted.",
+    )
     ap.add_argument("--cluster", type=int, default=27)
     ap.add_argument("--tr", type=float, default=0.72)
     ap.add_argument("--low", type=float, default=0.01)
@@ -57,6 +65,11 @@ def main():
                     help="MSE only: sample-entropy tolerance ratio")
     args = ap.parse_args()
 
+    mask = None
+    if args.mask:
+        mask = np.asarray(io.load_nifti_data(args.mask)) != 0
+        print(f"Using mask {args.mask}: {int(mask.sum())} voxels, shape {mask.shape}")
+
     params = {
         "cluster": args.cluster,
         "tr": args.tr,
@@ -66,6 +79,7 @@ def main():
         "mse_scales": tuple(args.mse_scales),
         "mse_m": args.mse_m,
         "mse_r": args.mse_r,
+        "mask": mask,
     }
     out = args.out or measure_norm.default_path(args.measure)
 

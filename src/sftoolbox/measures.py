@@ -172,31 +172,45 @@ def mse_complexity(bold_4d: np.ndarray, mask: np.ndarray | None = None,
 
 
 def compute(measure: str, bold_4d: np.ndarray, params: dict | None = None):
-    """Dispatch by measure key; return (map_3d, mask). Shared by app + scripts."""
+    """Dispatch by measure key; return (map_3d, mask). Shared by app + scripts.
+
+    ``params`` may include ``mask`` — a 3D boolean/integer array (e.g. the
+    group's ``final_mask.nii``). When given, that mask is used for every measure
+    instead of the finite/nonzero default, so results match a group pipeline
+    that computes measures inside a fixed mask.
+    """
     p = params or {}
     tr = float(p.get("tr", DEFAULT_TR))
     low = float(p.get("low", DEFAULT_LOW))
     high = float(p.get("high", DEFAULT_HIGH))
+    mask = p.get("mask")
+    if mask is not None:
+        mask = np.asarray(mask) != 0
+        if mask.shape != bold_4d.shape[:3]:
+            raise ValueError(
+                f"mask shape {mask.shape} does not match BOLD spatial shape "
+                f"{bold_4d.shape[:3]}"
+            )
     # Ajay's four.
     if measure == "reho":
-        return reho(bold_4d, cluster=int(p.get("cluster", 27)),
+        return reho(bold_4d, mask=mask, cluster=int(p.get("cluster", 27)),
                     tr=tr, low=low, high=high)
     if measure in ("alff", "falff"):
-        alff, falff, mask = alff_falff(bold_4d, tr=tr, band=(low, high))
-        return (alff if measure == "alff" else falff), mask
+        alff, falff, m = alff_falff(bold_4d, tr=tr, mask=mask, band=(low, high))
+        return (alff if measure == "alff" else falff), m
     if measure == "rsfa":
-        return rsfa(bold_4d, tr=tr, band=(low, high))
+        return rsfa(bold_4d, mask=mask, tr=tr, band=(low, high))
     # Arnav's additions.
     if measure in ("alff_slow5", "alff_slow4", "falff_slow5", "falff_slow4"):
-        return alff_falff_band(bold_4d, measure, tr=tr)
+        return alff_falff_band(bold_4d, measure, tr=tr, mask=mask)
     if measure == "int":
-        return int_timescale(bold_4d, tr=tr,
+        return int_timescale(bold_4d, mask=mask, tr=tr,
                              max_lag=int(p.get("max_lag", DEFAULT_INT_MAX_LAG)))
     if measure == "coherence_reho":
-        return coherence_reho(bold_4d, tr=tr, band=(low, high))
+        return coherence_reho(bold_4d, mask=mask, tr=tr, band=(low, high))
     if measure == "mse":
         scales = p.get("mse_scales", DEFAULT_MSE_SCALES)
-        return mse_complexity(bold_4d, tr=tr, scales=scales,
+        return mse_complexity(bold_4d, mask=mask, tr=tr, scales=scales,
                               m=int(p.get("mse_m", DEFAULT_MSE_M)),
                               r_ratio=float(p.get("mse_r", DEFAULT_MSE_R)))
     raise ValueError(f"unknown measure: {measure}")
