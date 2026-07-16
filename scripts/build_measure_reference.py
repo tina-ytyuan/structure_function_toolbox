@@ -30,6 +30,14 @@ def main():
     )
     ap.add_argument("--subjects-root", required=True)
     ap.add_argument(
+        "--pattern", default="*bold*.nii*",
+        help="Glob for BOLD files (DCC HCP: '*_finproc.nii.gz')",
+    )
+    ap.add_argument(
+        "--limit", type=int, default=None,
+        help="Only process the first N subjects (for quick tests)",
+    )
+    ap.add_argument(
         "--measure", required=True, choices=sorted(measures.MEASURES),
         help="Any measure key (Ajay's four or Arnav's additions)",
     )
@@ -61,9 +69,12 @@ def main():
     }
     out = args.out or measure_norm.default_path(args.measure)
 
-    bolds = io.find_subject_bolds(args.subjects_root)
+    bolds = io.find_subject_bolds(args.subjects_root, pattern=args.pattern)
     if not bolds:
         raise SystemExit(f"No BOLD NIfTIs found under {args.subjects_root}")
+    if args.limit is not None:
+        bolds = dict(list(bolds.items())[: args.limit])
+        print(f"Limiting to first {len(bolds)} subjects")
 
     maps, masks, ids, skipped = [], [], [], []
     shapes = set()

@@ -66,6 +66,30 @@ class Subject:
 # --- Low-level loaders -------------------------------------------------
 
 
+# Filename suffixes to strip when deriving a subject id from a BOLD filename.
+# HCP runs on the DCC look like ``100307_finproc.nii.gz``; strip the acquisition
+# tag so the id is just the subject number.
+_SUBJECT_ID_SUFFIXES = ("_finproc", "_bold", "_rest", "_clean")
+
+
+def subject_id_from_filename(path: str | Path) -> str:
+    """Derive a clean subject id from a BOLD filename.
+
+    ``100307_finproc.nii.gz`` -> ``100307``. Strips the .nii/.nii.gz extension
+    and a known acquisition suffix (see ``_SUBJECT_ID_SUFFIXES``).
+    """
+    name = Path(path).name
+    for ext in (".nii.gz", ".nii"):
+        if name.endswith(ext):
+            name = name[: -len(ext)]
+            break
+    for suf in _SUBJECT_ID_SUFFIXES:
+        if name.endswith(suf):
+            name = name[: -len(suf)]
+            break
+    return name
+
+
 def find_subject_bolds(
     root: str | Path, pattern: str = "*bold*.nii*"
 ) -> dict[str, Path]:
@@ -73,9 +97,13 @@ def find_subject_bolds(
 
     Handles two common layouts:
       1. one subfolder per subject, each holding a BOLD file, and
-      2. a flat folder of BOLD files (each file treated as one subject).
+      2. a flat folder of BOLD files (each file treated as one subject) — e.g.
+         the DCC HCP layout ``<run>/<subject>_finproc.nii.gz``. Point ``root``
+         at a single run folder (Rest1LR, etc.) and pass a matching ``pattern``
+         such as ``*_finproc.nii.gz``.
 
-    Returns {subject_id: bold_path}, sorted by id.
+    Returns {subject_id: bold_path}, sorted by id. Subject ids are cleaned with
+    ``subject_id_from_filename`` (so ``100307_finproc.nii.gz`` -> ``100307``).
     """
     root = Path(root)
     if not root.exists():
@@ -91,7 +119,7 @@ def find_subject_bolds(
     # Layout 2: flat files, if no subfolders yielded anything.
     if not found:
         for f in sorted(root.glob(pattern)) or sorted(root.glob("*.nii*")):
-            found[f.stem.replace(".nii", "")] = f
+            found[subject_id_from_filename(f)] = f
 
     return found
 
