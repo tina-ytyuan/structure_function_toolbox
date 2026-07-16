@@ -119,7 +119,7 @@ def plot_brain_map(
     ax0.axis("off")
     fig.colorbar(im, ax=ax0, fraction=0.046, pad=0.04)
 
-    ax1.hist(vals, bins=40, color="#a9c8e0", edgecolor="#7fa9cc")
+    ax1.hist(vals, bins=40, color="#c9c9c3", edgecolor="#8a8a84")
     ax1.set_title("value distribution (in mask)")
     ax1.set_xlabel("value")
     ax1.set_ylabel("voxels")
@@ -184,7 +184,7 @@ def plot_brain_montage(
         fig.colorbar(im, ax=slice_axes, fraction=0.015, pad=0.01)
 
     axh = fig.add_subplot(gs[rows, :])
-    axh.hist(vals, bins=40, color="#a9c8e0", edgecolor="#7fa9cc")
+    axh.hist(vals, bins=40, color="#c9c9c3", edgecolor="#8a8a84")
     axh.set_title("value distribution (in mask)", fontsize=9)
     axh.set_xlabel("value")
     axh.set_ylabel("voxels")
@@ -199,7 +199,7 @@ _MEASURE_CMAP = {
     "alff": "cold_hot",
     "falff": "cold_hot",
     "rsfa": "viridis",
-    # Arnav's additional measures.
+    # Additional measures.
     "alff_slow5": "cold_hot",
     "alff_slow4": "cold_hot",
     "falff_slow5": "cold_hot",
@@ -281,7 +281,7 @@ def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None, out_path
         mask = np.isfinite(map_3d) & (map_3d != 0)
     vals = map_3d[mask]
     fig, ax = plt.subplots(figsize=(7, 2.6))
-    ax.hist(vals, bins=40, color="#a9c8e0", edgecolor="#7fa9cc")
+    ax.hist(vals, bins=40, color="#c9c9c3", edgecolor="#8a8a84")
     ax.set_title("value distribution (in mask)", fontsize=10)
     ax.set_xlabel("value")
     ax.set_ylabel("voxels")
@@ -320,10 +320,10 @@ def plot_subject_vs_reference(
     pct = float((cohort < sval).mean() * 100)
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.hist(cohort, bins=25, color="#d6e6f2", edgecolor="#a9c8e0")
+    ax.hist(cohort, bins=25, color="#e0e0db", edgecolor="#b5b5af")
     ax.axvline(
         sval,
-        color="#3b82c4",
+        color="#2b2a27",
         lw=2.2,
         label=f"subject ({label}) = {sval:.3f}\n{pct:.0f}th percentile",
     )

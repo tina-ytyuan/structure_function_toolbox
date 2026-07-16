@@ -1,17 +1,17 @@
-"""Vendored fMRI signal measures from Arnav's DCC code.
+"""Vendored additional fMRI signal measures (frequency, timescale, entropy).
 
-These are additional measures beyond Ajay's four, taken verbatim from Arnav's
-``fMRI_signal_calculations.py`` on the DCC:
+These extend the core four measures. They are taken verbatim from the project's
+DCC fMRI signal-calculation pipeline so the toolbox reproduces the team's results
+exactly:
 
   * slow-5 / slow-4 ALFF & fALFF  (band split, DPABI/REST amplitude convention)
   * INT  -- Intrinsic Neural Timescale (Watanabe et al. 2019)
   * coherence-ReHo  -- REST rest_Cohe_ReHo.m spectral local homogeneity
   * MSE  -- Multiscale Entropy (sample entropy over coarse-grained scales)
 
-Source: /hpc/group/396-brainfun26/arnav/fMRI_signal_calculations.py
-As with Ajay's file, do NOT refactor the numerics: the point is bit-for-bit
-agreement with Arnav's pipeline. The toolbox-facing wrappers that adapt these to
-the (map_3d, mask) interface live in measures.py.
+As with fmri_measures.py, do NOT refactor the numerics: the point is bit-for-bit
+agreement with the reference pipeline. The toolbox-facing wrappers that adapt
+these to the (map_3d, mask) interface live in measures.py.
 
 ``antropy`` is required only for MSE and is imported lazily, so importing this
 module (and the package) does not require it. Install it to run MSE:
@@ -23,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 from scipy import signal
 
-# Arnav's defaults.
+# Defaults.
 TR = 0.72
 SLOW5 = (0.01, 0.027)
 SLOW4 = (0.027, 0.073)

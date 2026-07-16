@@ -14,9 +14,12 @@ and compares.
 
 Every subject — HCP or a user's own — runs through the *same* extraction path:
 
-0. **Voxelwise fMRI measures** (ALFF, fALFF, ReHo, RSFA) — `sftoolbox/fmri_measures.py`,
-   vendored verbatim from Ajay's DPABI-matched DCC code so the toolbox computes
-   them exactly as the team does. `sftoolbox/measures.py` is a thin adapter over it.
+0. **Voxelwise fMRI measures** — frequency-based (ALFF/fALFF, broadband and
+   slow-4/slow-5), local-synchrony (ReHo, Coherence-ReHo, RSFA, INT), and entropy
+   (MSE). Vendored verbatim from the team's DPABI-matched DCC pipeline in
+   `sftoolbox/fmri_measures.py` and `sftoolbox/fmri_measures_extra.py`, so the
+   toolbox computes them exactly as the team does; `sftoolbox/measures.py` is a
+   thin adapter over them.
 1. **Functional connectivity** from cleaned rs-fMRI — `sftoolbox/fmri.py`
 2. **FA-weighted structural connectivity** from diffusion — `sftoolbox/fa.py`
 3. **Structure-function coupling** metric — `sftoolbox/coupling.py`

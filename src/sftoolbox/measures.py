@@ -1,14 +1,14 @@
 """Voxelwise fMRI measures computed from cleaned BOLD only.
 
 The numerics come from ``fmri_measures.py``, which is vendored verbatim from
-Ajay's DCC code (``fMRI_signal_properties.py``) so the toolbox computes ALFF,
+the team's DCC pipeline so the toolbox computes ALFF,
 fALFF, ReHo, and RSFA exactly the way the team does. This module is only a thin
-adapter: it builds a brain mask, calls Ajay's functions, and returns each result
+adapter: it builds a brain mask, calls the vendored functions, and returns each result
 as a ``(map_3d, mask)`` pair in the (X, Y, Z) grid the rest of the toolbox (web
 app, references, viz) expects.
 
 Do not put measure math here — change it upstream in ``fmri_measures.py`` (or,
-better, re-vendor from Ajay's file). Defaults follow HCP / Ajay: TR = 0.72 s,
+better, re-vendor from the reference pipeline). Defaults follow HCP: TR = 0.72 s,
 band 0.01-0.08 Hz, 27-voxel ReHo neighborhood.
 """
 
@@ -17,14 +17,14 @@ from __future__ import annotations
 import numpy as np
 
 from . import fmri_measures as _fm
-from . import fmri_measures_arnav as _fma
+from . import fmri_measures_extra as _fma
 
-# HCP / Ajay defaults.
+# HCP defaults.
 DEFAULT_TR = 0.72
 DEFAULT_LOW = 0.01
 DEFAULT_HIGH = 0.08
 
-# Arnav-measure defaults.
+# Additional-measure defaults.
 DEFAULT_INT_MAX_LAG = 20
 DEFAULT_MSE_SCALES = (1, 2, 3, 4, 5)
 DEFAULT_MSE_M = 2
@@ -32,10 +32,10 @@ DEFAULT_MSE_R = 0.15
 
 
 def brain_mask(bold_4d: np.ndarray) -> np.ndarray:
-    """Analysis mask matching Ajay's pipeline: finite voxels with signal.
+    """Analysis mask matching the reference pipeline: finite voxels with signal.
 
     A voxel is kept if its time series is finite everywhere and not identically
-    zero. (Ajay's ``process_nifti`` uses exactly this when no explicit mask is
+    zero. (the reference ``process_nifti`` uses exactly this when no explicit mask is
     supplied.)
     """
     finite = np.all(np.isfinite(bold_4d), axis=-1)
@@ -54,7 +54,7 @@ def reho(bold_4d: np.ndarray, mask: np.ndarray | None = None,
          low: float = DEFAULT_LOW, high: float = DEFAULT_HIGH,
          detrend: bool = False, filter_band: bool = False
          ) -> tuple[np.ndarray, np.ndarray]:
-    """Kendall's-W regional homogeneity (Ajay's ``compute_reho``).
+    """Kendall's-W regional homogeneity (``compute_reho``).
 
     ``cluster`` is the neighborhood size (7, 19, or 27). Returns (map_3d, mask).
     """
@@ -70,7 +70,7 @@ def alff_falff(bold_4d: np.ndarray, tr: float = DEFAULT_TR,
                mask: np.ndarray | None = None,
                band: tuple[float, float] = (DEFAULT_LOW, DEFAULT_HIGH)
                ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """ALFF and fALFF maps (Ajay's ``compute_alff`` / ``compute_falff``).
+    """ALFF and fALFF maps (``compute_alff`` / ``compute_falff``).
 
     Returns (alff_3d, falff_3d, mask). Both are DPABI-matched: linear detrend,
     zero-pad to next power of two, amplitude = |FFT|*2/T, DPABI bin cutoffs.
@@ -88,7 +88,7 @@ def rsfa(bold_4d: np.ndarray, mask: np.ndarray | None = None,
          tr: float = DEFAULT_TR,
          band: tuple[float, float] = (DEFAULT_LOW, DEFAULT_HIGH),
          bandpass: bool = True) -> tuple[np.ndarray, np.ndarray]:
-    """RSFA / BOLD-SD (Ajay's ``compute_bold_sd_rsfa``).
+    """RSFA / BOLD-SD (``compute_bold_sd_rsfa``).
 
     Temporal SD (ddof=1) after linear detrend and FFT band-pass. Returns
     (map_3d, mask).
@@ -102,7 +102,7 @@ def rsfa(bold_4d: np.ndarray, mask: np.ndarray | None = None,
     return _inflate(vals, mask), mask
 
 
-# --- Arnav's additional measures (adapters over fmri_measures_arnav) ----
+# --- Additional measures (adapters over fmri_measures_extra) ----
 
 _SLOW_BANDS = {"slow5": _fma.SLOW5, "slow4": _fma.SLOW4}
 
@@ -110,7 +110,7 @@ _SLOW_BANDS = {"slow5": _fma.SLOW5, "slow4": _fma.SLOW4}
 def alff_falff_band(bold_4d: np.ndarray, key: str, tr: float = DEFAULT_TR,
                     mask: np.ndarray | None = None
                     ) -> tuple[np.ndarray, np.ndarray]:
-    """One slow-band ALFF/fALFF map (Arnav). ``key`` e.g. 'alff_slow5'."""
+    """One slow-band ALFF/fALFF map. ``key`` e.g. 'alff_slow5'."""
     if mask is None:
         mask = brain_mask(bold_4d)
     _kind, name = key.split("_", 1)            # ('alff'|'falff', 'slow4'|'slow5')
@@ -123,7 +123,7 @@ def alff_falff_band(bold_4d: np.ndarray, key: str, tr: float = DEFAULT_TR,
 def int_timescale(bold_4d: np.ndarray, mask: np.ndarray | None = None,
                   tr: float = DEFAULT_TR, max_lag: int = DEFAULT_INT_MAX_LAG
                   ) -> tuple[np.ndarray, np.ndarray]:
-    """Intrinsic Neural Timescale (Arnav's ``compute_int``)."""
+    """Intrinsic Neural Timescale (``compute_int``)."""
     if mask is None:
         mask = brain_mask(bold_4d)
     vals = _fma.compute_int(bold_4d[mask], tr=tr, max_lag=max_lag)
@@ -134,7 +134,7 @@ def coherence_reho(bold_4d: np.ndarray, mask: np.ndarray | None = None,
                    tr: float = DEFAULT_TR,
                    band: tuple[float, float] = (DEFAULT_LOW, DEFAULT_HIGH)
                    ) -> tuple[np.ndarray, np.ndarray]:
-    """Coherence-ReHo (Arnav's ``compute_coherence_reho``).
+    """Coherence-ReHo (``compute_coherence_reho``).
 
     Returns (map_3d, mask). The returned mask marks voxels where a coherence
     value was actually computed (finite); invalid voxels are 0 in the map.
@@ -150,7 +150,7 @@ def mse_complexity(bold_4d: np.ndarray, mask: np.ndarray | None = None,
                    tr: float = DEFAULT_TR, scales=DEFAULT_MSE_SCALES,
                    m: int = DEFAULT_MSE_M, r_ratio: float = DEFAULT_MSE_R,
                    method: str = "mean") -> tuple[np.ndarray, np.ndarray]:
-    """Multiscale-entropy complexity index (Arnav).
+    """Multiscale-entropy complexity index.
 
     Sample entropy per coarse-grained scale (``compute_mse``), collapsed across
     scales with a NaN-aware reduction (mean by default; +inf -> NaN first),
@@ -191,7 +191,7 @@ def compute(measure: str, bold_4d: np.ndarray, params: dict | None = None):
                 f"mask shape {mask.shape} does not match BOLD spatial shape "
                 f"{bold_4d.shape[:3]}"
             )
-    # Ajay's four.
+    # Core four measures.
     if measure == "reho":
         return reho(bold_4d, mask=mask, cluster=int(p.get("cluster", 27)),
                     tr=tr, low=low, high=high)
@@ -200,7 +200,7 @@ def compute(measure: str, bold_4d: np.ndarray, params: dict | None = None):
         return (alff if measure == "alff" else falff), m
     if measure == "rsfa":
         return rsfa(bold_4d, mask=mask, tr=tr, band=(low, high))
-    # Arnav's additions.
+    # Additional measures.
     if measure in ("alff_slow5", "alff_slow4", "falff_slow5", "falff_slow4"):
         return alff_falff_band(bold_4d, measure, tr=tr, mask=mask)
     if measure == "int":
@@ -216,8 +216,8 @@ def compute(measure: str, bold_4d: np.ndarray, params: dict | None = None):
     raise ValueError(f"unknown measure: {measure}")
 
 
-# Registry so the UI/back end can look measures up by key. Ajay's four first,
-# then Arnav's additional measures.
+# Registry so the UI/back end can look measures up by key. Core four first,
+# then the additional measures.
 MEASURES = {
     "reho": {"label": "Regional Homogeneity (ReHo)"},
     "alff": {"label": "ALFF"},

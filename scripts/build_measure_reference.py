@@ -41,7 +41,7 @@ def main():
     )
     ap.add_argument(
         "--measure", required=True, choices=sorted(measures.MEASURES),
-        help="Any measure key (Ajay's four or Arnav's additions)",
+        help="Any measure key (core four or additional measures)",
     )
     ap.add_argument("--out")
     ap.add_argument(

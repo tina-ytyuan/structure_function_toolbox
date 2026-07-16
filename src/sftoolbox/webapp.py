@@ -46,84 +46,92 @@ CACHE_DIR = Path(tempfile.mkdtemp(prefix="sft_cache_"))
 STYLE = """
 <style>
  :root{
-   --bg:#f4f8fc; --surface:#ffffff; --border:#e2ebf3; --border-strong:#cdddea;
-   --text:#1e293b; --muted:#64748b; --heading:#0f2740;
-   --accent:#3b82c4; --accent-hover:#2f6aa3; --accent-soft:#e6f0f9;
-   --secondary:#eaf2f9; --secondary-hover:#dae7f2; --secondary-text:#3e5266;
-   --err:#b3492f; --err-soft:#fbeae5;
-   --shadow:0 1px 2px rgba(15,39,64,.04),0 4px 12px rgba(15,39,64,.05);
-   --shadow-hover:0 2px 4px rgba(15,39,64,.06),0 8px 20px rgba(15,39,64,.10);
+   --bg:#f4f4f2; --surface:#ffffff; --border:#dcdcd8; --border-strong:#bcbcb6;
+   --text:#1c1c1a; --muted:#68675f; --heading:#111110;
+   --accent:#2b2a27; --accent-hover:#484640; --accent-soft:#e7e7e2;
+   --secondary:#ededea; --secondary-hover:#e2e2dd; --secondary-text:#2b2a27;
+   --err:#7a2c20; --err-soft:#f2e7e4;
+   --radius:4px;
  }
  *{box-sizing:border-box;}
- body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;
-      margin:0;background:var(--bg);color:var(--text);line-height:1.55;
-      -webkit-font-smoothing:antialiased;}
- header{background:var(--surface);border-bottom:1px solid var(--border);
+ body{font-family:Helvetica,Arial,"Helvetica Neue",sans-serif;
+      margin:0;background:var(--bg);color:var(--text);line-height:1.5;
+      font-size:15.5px;-webkit-font-smoothing:antialiased;}
+ header{background:var(--surface);border-bottom:1px solid var(--border-strong);
         padding:1rem 1.5rem;position:sticky;top:0;z-index:5;}
- header .wrap{max-width:820px;margin:0 auto;display:flex;align-items:baseline;
+ header .wrap{max-width:840px;margin:0 auto;display:flex;align-items:baseline;
               gap:.75rem;}
- header .title{font-size:1.05rem;font-weight:700;color:var(--heading);
-               letter-spacing:-.01em;}
- header .tag{font-size:.8rem;color:var(--muted);}
- main{max-width:820px;margin:0 auto;padding:1.75rem 1.5rem 3rem;}
+ header .title{font-size:1.25rem;font-weight:700;color:var(--heading);}
+ header .tag{font-size:.9rem;color:var(--muted);font-style:italic;}
+ main{max-width:840px;margin:0 auto;padding:1.75rem 1.5rem 3rem;}
  main.wide{max-width:1180px;}
- .lead{color:var(--muted);font-size:.95rem;margin:.25rem 0 1.5rem;max-width:60ch;}
- h2{font-size:1.05rem;font-weight:650;color:var(--heading);
-    margin:0 0 .25rem;letter-spacing:-.01em;}
+ .lead{color:var(--muted);font-size:1rem;margin:.25rem 0 1.5rem;max-width:65ch;}
+ h2{font-size:1.15rem;font-weight:700;color:var(--heading);margin:0 0 .3rem;}
  .card{background:var(--surface);border:1px solid var(--border);
-       border-radius:14px;padding:1.4rem 1.5rem;margin:1.1rem 0;
-       box-shadow:var(--shadow);}
- .card .sub{color:var(--muted);font-size:.85rem;margin:.1rem 0 1rem;}
- label{display:block;margin:.9rem 0 .35rem;font-weight:600;font-size:.82rem;
-        color:var(--heading);letter-spacing:.005em;}
+       border-radius:var(--radius);padding:1.3rem 1.5rem;margin:1.1rem 0;}
+ .card .sub{color:var(--muted);font-size:.92rem;margin:.1rem 0 1rem;}
+ label{display:block;margin:.9rem 0 .35rem;font-weight:700;font-size:.92rem;
+        color:var(--heading);}
  input[type=text],input[type=number],input[type=file],select{width:100%;
-        padding:.6rem .7rem;border:1px solid var(--border-strong);
-        border-radius:9px;background:#fff;font-size:.9rem;color:var(--text);
+        font-family:inherit;padding:.55rem .7rem;border:1px solid var(--border-strong);
+        border-radius:var(--radius);background:#fff;font-size:.95rem;color:var(--text);
         transition:border-color .15s ease,box-shadow .15s ease;}
  select{appearance:none;-webkit-appearance:none;cursor:pointer;
-        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%233b82c4' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%232b2a27' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
         background-repeat:no-repeat;background-position:right .8rem center;
         padding-right:2rem;}
  input:focus,select:focus{outline:none;border-color:var(--accent);
-        box-shadow:0 0 0 3px var(--accent-soft);}
- input[type=file]{padding:.45rem .5rem;background:#fdfcfa;cursor:pointer;}
+        box-shadow:0 0 0 2px var(--accent-soft);}
+ input[type=file]{padding:.4rem .5rem;background:#fbfbfa;cursor:pointer;}
+ /* Minimal slider: thin rule + small square charcoal handle. */
+ input[type=range]{-webkit-appearance:none;appearance:none;width:100%;
+        height:2px;background:var(--border-strong);border:none;padding:0;
+        margin:.9rem 0;cursor:pointer;}
+ input[type=range]:focus{outline:none;}
+ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+        width:13px;height:13px;border-radius:2px;background:var(--accent);
+        border:1px solid var(--accent);cursor:pointer;}
+ input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:2px;
+        background:var(--accent);border:1px solid var(--accent);cursor:pointer;}
+ input[type=range]::-moz-range-track{height:2px;background:var(--border-strong);}
  .row{display:flex;gap:1rem;flex-wrap:wrap;} .row>div{flex:1;min-width:150px;}
  .params{border-top:1px solid var(--border);margin-top:1.2rem;padding-top:.4rem;}
- .params .phint{color:var(--muted);font-size:.78rem;margin-top:.6rem;}
- .phint{color:var(--muted);font-size:.78rem;margin-top:.6rem;}
+ .params .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
+ .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
  .pgroup{display:none;} .pgroup.active{display:block;}
  .mgroup{display:none;} .mgroup.active{display:block;}
  .pickrow{display:flex;gap:.6rem;align-items:stretch;}
  .pickrow input{flex:1;} .pickrow button{white-space:nowrap;}
  .demorow{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1rem;}
  .actions{margin-top:1.5rem;display:flex;gap:.7rem;flex-wrap:wrap;}
- button{font-family:inherit;font-size:.92rem;font-weight:600;cursor:pointer;
-        border-radius:10px;padding:.7rem 1.35rem;border:1px solid transparent;
-        transition:background .15s ease,box-shadow .15s ease,transform .06s ease;}
- button:active{transform:translateY(1px);}
- .btn-primary{background:var(--accent);color:#fff;box-shadow:var(--shadow);}
- .btn-primary:hover{background:var(--accent-hover);box-shadow:var(--shadow-hover);}
+ button{font-family:inherit;font-size:1rem;font-weight:700;cursor:pointer;
+        border-radius:var(--radius);padding:.55rem 1.25rem;
+        border:1px solid var(--accent);transition:background .15s ease;}
+ .btn-primary{background:var(--accent);color:#fff;}
+ .btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover);}
  .btn-secondary{background:var(--secondary);color:var(--secondary-text);
         border-color:var(--border-strong);}
  .btn-secondary:hover{background:var(--secondary-hover);}
  a.btn-secondary,a.btn-primary{display:inline-block;text-decoration:none;
-        font-weight:600;font-size:.9rem;border-radius:10px;padding:.6rem 1.1rem;
-        border:1px solid transparent;transition:background .15s ease;}
+        font-weight:700;font-size:.95rem;border-radius:var(--radius);
+        padding:.5rem 1.1rem;border:1px solid var(--accent);
+        transition:background .15s ease;}
  a.btn-secondary{background:var(--secondary);color:var(--secondary-text);
         border-color:var(--border-strong);}
  a.btn-secondary:hover{background:var(--secondary-hover);text-decoration:none;}
- .dllink{font-size:.82rem;}
- .muted{color:var(--muted);font-size:.85rem;}
- .hint{color:var(--muted);font-size:.8rem;margin-top:.9rem;line-height:1.5;}
- img{max-width:100%;border-radius:10px;display:block;}
- a{color:var(--accent);text-decoration:none;font-weight:600;}
- a:hover{text-decoration:underline;}
- .back{display:inline-block;margin-bottom:.5rem;font-size:.88rem;}
- .stats{display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.4rem;}
- .stat .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;
-          letter-spacing:.04em;}
- .stat .v{font-size:1.25rem;font-weight:700;color:var(--accent);}
- .err{background:var(--err-soft);border-color:#f0cabd;color:var(--err);}
+ .dllink{font-size:.9rem;}
+ .muted{color:var(--muted);font-size:.92rem;}
+ .hint{color:var(--muted);font-size:.88rem;margin-top:.9rem;line-height:1.5;}
+ img{max-width:100%;border-radius:var(--radius);display:block;}
+ a{color:var(--accent);text-decoration:underline;font-weight:400;}
+ a:hover{color:var(--accent-hover);}
+ .back{display:inline-block;margin-bottom:.5rem;font-size:.95rem;}
+ .stats{display:flex;gap:1.75rem;flex-wrap:wrap;margin-top:.4rem;}
+ .stat .k{font-size:.8rem;color:var(--muted);text-transform:uppercase;
+          letter-spacing:.05em;}
+ .stat .v{font-size:1.35rem;font-weight:700;color:var(--heading);
+          font-variant-numeric:tabular-nums;}
+ .err{background:var(--err-soft);border-color:#dcbfb8;color:var(--err);}
  .err b{color:var(--err);}
 </style>
 """
@@ -179,20 +187,22 @@ parameters, and generate the map. Everything runs on your machine.</p>
     <h2 style="margin-top:.6rem;">2 &nbsp;fMRI measure</h2>
     <label>Measure</label>
     <select name="measure" id="measure" onchange="showParams()">
-      <optgroup label="Standard (Ajay)">
-        <option value="reho">Regional Homogeneity (ReHo)</option>
-        <option value="alff">ALFF</option>
-        <option value="falff">fALFF (fractional ALFF)</option>
-        <option value="rsfa">RSFA (Resting-State Fluctuation Amplitude)</option>
-      </optgroup>
-      <optgroup label="Additional (Arnav)">
+      <optgroup label="Frequency-based">
+        <option value="alff">ALFF (broadband, 0.01-0.08 Hz)</option>
+        <option value="falff">fALFF (broadband, 0.01-0.08 Hz)</option>
         <option value="alff_slow5">ALFF (slow-5, 0.01-0.027 Hz)</option>
         <option value="alff_slow4">ALFF (slow-4, 0.027-0.073 Hz)</option>
         <option value="falff_slow5">fALFF (slow-5, 0.01-0.027 Hz)</option>
         <option value="falff_slow4">fALFF (slow-4, 0.027-0.073 Hz)</option>
-        <option value="int">INT (Intrinsic Neural Timescale)</option>
-        <option value="coherence_reho">Coherence-ReHo</option>
-        <option value="mse">MSE (Multiscale Entropy complexity index)</option>
+      </optgroup>
+      <optgroup label="Local synchrony">
+        <option value="reho">Regional Homogeneity (ReHo)</option>
+        <option value="coherence_reho">Coherence Regional Homogeneity</option>
+        <option value="rsfa">Resting-State Fluctuation Amplitude (RSFA)</option>
+        <option value="int">Intrinsic Neural Timescale (INT)</option>
+      </optgroup>
+      <optgroup label="Entropy">
+        <option value="mse">Multiscale Entropy (MSE)</option>
       </optgroup>
     </select>
 
@@ -285,8 +295,8 @@ parameters, and generate the map. Everything runs on your machine.</p>
     <button type="submit" name="measure" value="coherence_reho" class="btn-secondary">Demo: Coherence-ReHo</button>
     <button type="submit" name="measure" value="mse" class="btn-secondary">Demo: MSE</button>
   </div>
-  <p class="phint">INT, Coherence-ReHo, and MSE are Arnav's additional measures.
-  MSE requires the antropy package and is the slowest to compute.</p>
+  <p class="phint">MSE requires the antropy package and is the slowest to
+  compute; Coherence-ReHo is also slower than the frequency measures.</p>
 </form>
 
 <script>
@@ -427,18 +437,17 @@ BATCH = (
           border-right:1px solid var(--border);padding-right:.4rem;}
  .sidebar h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
              color:var(--muted);margin:.2rem 0 .5rem;}
- .sidebar a{display:block;padding:.35rem .5rem;border-radius:7px;font-size:.85rem;
-            font-weight:500;color:var(--secondary-text);text-decoration:none;
+ .sidebar a{display:block;padding:.35rem .5rem;border-radius:var(--radius);font-size:.88rem;
+            font-weight:400;color:var(--secondary-text);text-decoration:none;
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
  .sidebar a:hover{background:var(--secondary);}
- .sidebar a.top{color:var(--accent);font-weight:600;margin-bottom:.3rem;}
+ .sidebar a.top{color:var(--accent);font-weight:700;margin-bottom:.3rem;}
  .maincol{flex:1;min-width:0;}
  .rightbar{position:sticky;top:66px;flex:0 0 235px;
            max-height:calc(100vh - 88px);overflow:auto;}
  .rightbar .card{margin-top:0;}
  .subject-card{scroll-margin-top:74px;}
- #backtop{position:fixed;bottom:1.5rem;right:1.5rem;z-index:30;display:none;
-          box-shadow:var(--shadow-hover);}
+ #backtop{position:fixed;bottom:1.5rem;right:1.5rem;z-index:30;display:none;}
  @media(max-width:1000px){.rightbar{display:none;}}
  @media(max-width:680px){.sidebar{display:none;}}
 </style>
@@ -697,23 +706,24 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
     mse_r = g("mse_r", "0.15")
     max_lag = g("int_max_lag", "20")
 
-    std_opts = (
-        opt("reho", "Regional Homogeneity (ReHo)")
-        + opt("alff", "ALFF")
-        + opt("falff", "fALFF (fractional ALFF)")
-        + opt("rsfa", "RSFA (Resting-State Fluctuation Amplitude)")
-    )
-    arnav_opts = (
-        opt("alff_slow5", "ALFF (slow-5)")
+    freq_opts = (
+        opt("alff", "ALFF (broadband)")
+        + opt("falff", "fALFF (broadband)")
+        + opt("alff_slow5", "ALFF (slow-5)")
         + opt("alff_slow4", "ALFF (slow-4)")
         + opt("falff_slow5", "fALFF (slow-5)")
         + opt("falff_slow4", "fALFF (slow-4)")
-        + opt("int", "INT (Intrinsic Neural Timescale)")
-        + opt("coherence_reho", "Coherence-ReHo")
-        + opt("mse", "MSE (complexity index)")
     )
-    options = (f'<optgroup label="Standard (Ajay)">{std_opts}</optgroup>'
-               f'<optgroup label="Additional (Arnav)">{arnav_opts}</optgroup>')
+    sync_opts = (
+        opt("reho", "Regional Homogeneity (ReHo)")
+        + opt("coherence_reho", "Coherence Regional Homogeneity")
+        + opt("rsfa", "Resting-State Fluctuation Amplitude (RSFA)")
+        + opt("int", "Intrinsic Neural Timescale (INT)")
+    )
+    entropy_opts = opt("mse", "Multiscale Entropy (MSE)")
+    options = (f'<optgroup label="Frequency-based">{freq_opts}</optgroup>'
+               f'<optgroup label="Local synchrony">{sync_opts}</optgroup>'
+               f'<optgroup label="Entropy">{entropy_opts}</optgroup>')
 
     return f'''
 <form method="post" action="{action}" class="card">
@@ -1244,7 +1254,7 @@ def _roi_bar_png(roi_values):
 
     fig, ax = plt.subplots(figsize=(7, 2.8))
     x = np.arange(roi_values.size)
-    ax.bar(x, np.nan_to_num(roi_values), color="#3b82c4", width=1.0)
+    ax.bar(x, np.nan_to_num(roi_values), color="#4a4a45", width=1.0)
     ax.set_xlabel("region")
     ax.set_ylabel("mean FA")
     ax.set_xlim(-0.5, roi_values.size - 0.5)

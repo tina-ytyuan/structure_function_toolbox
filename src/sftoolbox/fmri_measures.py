@@ -1,16 +1,15 @@
 """Vendored fMRI signal-property measures (ALFF, fALFF, ReHo, RSFA).
 
-These are the project's canonical measure definitions, taken verbatim from
-Ajay's ``fMRI_signal_properties.py`` on the DCC (DPABI/REST-matched). They are
-kept here as the single source of truth so the toolbox computes measures exactly
-the way the team does, rather than an independent reimplementation.
+These are the project's canonical measure definitions, taken verbatim from the
+team's DCC fMRI signal-property pipeline (DPABI/REST-matched). They are kept here
+as the single source of truth so the toolbox computes measures exactly the way
+the team does, rather than an independent reimplementation.
 
-Source: /hpc/group/396-brainfun26/ajay/fMRI_signal_properties.py
 Do not "improve" or refactor the numerics here — the point is bit-for-bit
-agreement with Ajay's pipeline (and, through it, DPABI). The toolbox-facing
+agreement with the reference pipeline (and, through it, DPABI). The toolbox-facing
 wrappers that adapt these to the (map_3d, mask) interface live in measures.py.
 
-Conventions (from Ajay / DPABI):
+Conventions (DPABI/REST):
   * linear detrend before ALFF/fALFF/RSFA,
   * zero-pad to the next power of two, amplitude = |FFT| * 2 / T,
   * DPABI integer frequency-bin cutoffs (not float-frequency comparison),
