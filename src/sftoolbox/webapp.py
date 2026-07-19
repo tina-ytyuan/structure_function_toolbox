@@ -170,6 +170,11 @@ parameters, and generate the map. Everything runs on your machine.</p>
     <input type="text" name="subject_id" value="subject-01">
     <label>Cleaned BOLD &mdash; 4D NIfTI</label>
     <input type="file" name="bold">
+    <label>Mask &mdash; 3D NIfTI (optional)</label>
+    <input type="file" name="mask">
+    <p class="phint">If given, the measure is computed only inside this mask
+    (e.g. your group's final_mask.nii) instead of the default finite/nonzero
+    mask. Voxels &ne; 0 are kept.</p>
   </div>
 
   <div class="mgroup" data-mode="folder" id="mode-folder">
@@ -252,6 +257,14 @@ parameters, and generate the map. Everything runs on your machine.</p>
       <p class="phint">Sample entropy per coarse-grained scale; the map is the
       NaN-aware mean across scales (complexity index). Requires antropy.</p>
     </div>
+  </div>
+
+    <label style="font-weight:400;display:flex;align-items:center;gap:.5rem;margin-top:1rem;">
+      <input type="checkbox" name="include_zeros" value="on" style="width:auto;">
+      Include zero-valued voxels in the value distribution
+    </label>
+    <p class="phint">Off by default: exact-zero voxels (mask voxels the measure
+    couldn't compute, or image edges) otherwise pile up as a spike at 0.</p>
   </div>
 
   <div class="actions">
@@ -655,17 +668,24 @@ def _params_str(measure, p):
     return ""
 
 
-def _compute(measure: str, bold: np.ndarray, form):
-    """Dispatch to the chosen measure; return (map3d, mask, params_str, cmap, sym)."""
+def _compute(measure: str, bold: np.ndarray, form, mask=None):
+    """Dispatch to the chosen measure; return (map3d, mask, params_str, cmap, sym).
+
+    ``mask`` is an optional 3D array restricting the analysis (else the default
+    finite/nonzero mask is used).
+    """
     if measure not in measures.MEASURES:
         raise ValueError(f"unknown measure: {measure}")
     p = _form_params(form)
-    m, mask = measures.compute(measure, bold, p)
+    if mask is not None:
+        p["mask"] = mask
+    m, mask_out = measures.compute(measure, bold, p)
     cmap = viz._MEASURE_CMAP.get(measure, "magma")
-    return m, mask, _params_str(measure, p), cmap, False
+    return m, mask_out, _params_str(measure, p), cmap, False
 
 
-def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None):
+def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None,
+                   cached_mask=None):
     """A compact 'change measure & regenerate' form for the results pages.
 
     Carries the datasource (folder path, cached upload, or folder+subject) as
@@ -673,6 +693,7 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
     """
     g = form.get if form is not None else (lambda k, d=None: d)
     reho_c = g("reho_cluster", "27")
+    inc_zeros = " checked" if _truthy(g("include_zeros", "")) else ""
     tr = g("alff_tr", "0.72")
     lo = g("alff_low", "0.01")
     hi = g("alff_high", "0.08")
@@ -686,6 +707,10 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
     if mode == "single" and cached:
         hidden += (
             f'<input type="hidden" name="cached_bold" value="{html.escape(cached)}">'
+        )
+    if mode == "single" and cached_mask:
+        hidden += (
+            f'<input type="hidden" name="cached_mask" value="{html.escape(cached_mask)}">'
         )
     same = {
         "demo": "same synthetic data",
@@ -758,6 +783,10 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None)
       <div><label>r</label><input type="number" name="mse_r" step="0.01" value="{mse_r}"></div>
     </div>
   </div>
+  <label style="font-weight:400;display:flex;align-items:center;gap:.5rem;margin-top:.9rem;">
+    <input type="checkbox" name="include_zeros" value="on"{inc_zeros} style="width:auto;">
+    Include zero-valued voxels in the value distribution
+  </label>
 
   <div class="actions"><button class="btn-primary">Regenerate</button></div>
   <script>
@@ -780,8 +809,13 @@ def _slices_png(map3d, affine, measure, symmetric=False, cmap=None):
     )
 
 
-def _hist_png(map3d, mask):
-    return _fig_to_b64(viz.plot_value_hist(map3d, mask))
+def _truthy(v):
+    """Interpret an HTML checkbox / query value as a boolean."""
+    return str(v).lower() in ("on", "true", "1", "yes")
+
+
+def _hist_png(map3d, mask, exclude_zero=True):
+    return _fig_to_b64(viz.plot_value_hist(map3d, mask, exclude_zero=exclude_zero))
 
 
 def _group_average(results):
@@ -860,7 +894,7 @@ def _compare_pngs(measure, map3d, mask, affine):
                 viz.plot_subject_vs_reference(summary, {"values": ref["summaries"]}))
         if z is not None:
             out["map_png"] = _slices_png(z, affine, measure, symmetric=True,
-                                         cmap="cold_hot")
+                                         cmap="RdBu_r")
         else:
             out["note"] = (
                 f"Cohort grid {tuple(int(s) for s in ref['shape'])} differs from "
@@ -877,7 +911,7 @@ def _compare_pngs(measure, map3d, mask, affine):
            "map_png": None}
     if diff is not None:
         out["map_png"] = _slices_png(diff, affine, measure, symmetric=True,
-                                     cmap="cold_hot")
+                                     cmap="RdBu_r")
     else:
         out["note"] = (
             f"Group grid {tuple(int(s) for s in ref['shape'])} differs from this "
@@ -896,15 +930,18 @@ def _render(
     mode="single",
     folder=None,
     cached=None,
+    cached_mask=None,
     form=None,
 ):
     label = measures.MEASURES.get(measure, {}).get("label", measure)
+    exclude_zero = not _truthy(form.get("include_zeros") if form is not None else None)
     png = _slices_png(map3d, affine, measure)
-    hist_png = _hist_png(map3d, mask)
+    hist_png = _hist_png(map3d, mask, exclude_zero=exclude_zero)
     mean, median, nvox = _stats(map3d, mask)
     cmp = _compare_pngs(measure, map3d, mask, affine)
     controls = _controls_html(
-        mode, measure, folder=folder, cached=cached, form=form, sid=sid
+        mode, measure, folder=folder, cached=cached, form=form, sid=sid,
+        cached_mask=cached_mask
     )
     download_url = _download_url(
         measure, mode, sid, cached=cached, folder=folder, form=form
@@ -1050,8 +1087,22 @@ def run():
     bold = np.asarray(img.get_fdata())
     if bold.ndim != 4:
         return _page_error(f"BOLD must be 4D (X,Y,Z,T); got shape {bold.shape}.")
+
+    # Optional analysis mask (uploaded once, then cached for measure switches).
+    cached_mask = request.form.get("cached_mask") or ""
+    mask_arr = None
+    if cached_mask and (CACHE_DIR / cached_mask).exists():
+        mask_arr = np.asarray(io.load_nifti_data(CACHE_DIR / cached_mask))
+    else:
+        mfs = request.files.get("mask")
+        if mfs is not None and mfs.filename != "":
+            cached_mask = uuid.uuid4().hex + "_" + Path(mfs.filename).name
+            mfs.save(str(CACHE_DIR / cached_mask))
+            mask_arr = np.asarray(io.load_nifti_data(CACHE_DIR / cached_mask))
+
     try:
-        map3d, mask, params, _c, _d = _compute(measure, bold, request.form)
+        map3d, mask, params, _c, _d = _compute(measure, bold, request.form,
+                                               mask=mask_arr)
     except Exception as e:
         return _page_error(str(e))
     return _render(
@@ -1064,6 +1115,7 @@ def run():
         affine=img.affine,
         mode="single",
         cached=cached,
+        cached_mask=cached_mask,
         form=request.form,
     )
 

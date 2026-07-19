@@ -273,16 +273,28 @@ def plot_orientations(
     return _save(fig, out_path)
 
 
-def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None, out_path=None):
-    """Small histogram of in-mask values, shown alongside the slice panels."""
+def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None,
+                    exclude_zero: bool = True, out_path=None):
+    """Small histogram of in-mask values, shown alongside the slice panels.
+
+    ``exclude_zero`` (default True) drops voxels that are exactly 0 — these are
+    usually not real measurements (mask voxels the measure couldn't compute, or
+    boundary voxels), and a spike at 0 otherwise dominates the distribution.
+    """
     import matplotlib.pyplot as plt
 
     if mask is None:
         mask = np.isfinite(map_3d) & (map_3d != 0)
     vals = map_3d[mask]
+    n_total = vals.size
+    if exclude_zero:
+        vals = vals[vals != 0]
+    n_zero = n_total - vals.size
     fig, ax = plt.subplots(figsize=(7, 2.6))
     ax.hist(vals, bins=40, color="#c9c9c3", edgecolor="#8a8a84")
-    ax.set_title("value distribution (in mask)", fontsize=10)
+    subtitle = "value distribution (in mask"
+    subtitle += f", {n_zero:,} zeros excluded)" if exclude_zero and n_zero else ")"
+    ax.set_title(subtitle, fontsize=10)
     ax.set_xlabel("value")
     ax.set_ylabel("voxels")
     fig.tight_layout()

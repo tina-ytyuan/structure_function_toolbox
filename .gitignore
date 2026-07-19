@@ -14,6 +14,7 @@ venv/
 
 # pytest
 .pytest_cache/
+.ruff_cache/
 
 # Data (never commit subject imaging data)
 data/

@@ -8,7 +8,7 @@ Usage
 -----
     python scripts/reference_from_group_map.py --measure reho \
         --mean .../mean_maps/reho/reho_Rest1LR_group_mean.nii.gz \
-        --out  /hpc/group/396-brainfun26/tina/refs/measure_ref_reho.npz
+        --out  /path/to/project/$USER/refs/measure_ref_reho.npz
 
 Add --std <SD NIfTI> if a group standard-deviation map exists (that's what
 enables the voxelwise z-map "how far from average"). Without --std, the

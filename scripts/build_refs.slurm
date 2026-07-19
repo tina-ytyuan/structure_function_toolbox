@@ -1,14 +1,14 @@
 #!/bin/bash
 # Build normative measure references from HCP data on the DCC.
 #
-# Submit from your toolbox checkout on the DCC, e.g.:
+# Submit from your toolbox checkout on the cluster, e.g.:
 #     sbatch scripts/build_refs.slurm reho alff falff rsfa
-# (measures default to Ajay's four if none are given). Edit the CONFIG block
-# below to match your paths before the first run.
+# (measures default to the core four if none are given). Edit the CONFIG block
+# below to match your paths, and the SBATCH account/partition to your cluster.
 
 #SBATCH --job-name=sft_refs
-#SBATCH --account=dataplus
-#SBATCH --partition=scavenger
+#SBATCH --account=your_account
+#SBATCH --partition=your_partition
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
 #SBATCH --time=12:00:00
@@ -19,10 +19,10 @@ set -euo pipefail
 mkdir -p slurm_logs
 
 # ---- CONFIG (edit these) --------------------------------------------
-PROJECT_DIR=/hpc/group/396-brainfun26
+PROJECT_DIR=/path/to/project                  # your project root on the cluster
 RUN=Rest1LR                                   # which HCP run to use
 SUBJECTS_ROOT="$PROJECT_DIR/data/$RUN"        # folder of *_finproc.nii.gz
-OUT_DIR="$PROJECT_DIR/tina/refs"              # where references are written
+OUT_DIR="$PROJECT_DIR/$USER/refs"             # where references are written
 MASK="$PROJECT_DIR/data/final_mask.nii"       # group mask applied to every subject
 PATTERN='*_finproc.nii.gz'
 TR=0.72
