@@ -10,6 +10,33 @@ The toolbox does **not** preprocess. It consumes already-preprocessed data
 that conforms to [`docs/input_spec.md`](docs/input_spec.md), computes measures,
 and compares.
 
+## What it looks like
+
+A small local web app (nothing leaves your machine) walks you from an uploaded
+subject to a measure map, a value distribution, and a comparison against the
+group average.
+
+**1. Choose your data**
+
+![Choosing a subject file](docs/screenshots/demo-choose-file.gif)
+
+**2. Choose a measure**
+
+![Choosing a measure](docs/screenshots/demo-choose-measures.gif)
+
+**3. View the results**
+
+![Results page](docs/screenshots/demo-results.gif)
+
+Try it without any data using the built-in demo:
+
+```bash
+pip install -e .
+python -m sftoolbox.webapp     # opens http://127.0.0.1:5000
+```
+
+Then click any **Run demo** button to compute a measure on synthetic BOLD.
+
 ## How it works
 
 Every subject — HCP or a user's own — runs through the *same* extraction path:
@@ -153,3 +180,25 @@ scripts/         build_reference.py, compare_subject.py
 docs/            input_spec.md  <- the input contract
 tests/           synthetic-data tests for the settled logic
 ```
+
+## Acknowledgements
+
+- The voxelwise fMRI-measure implementations (`fmri_measures.py`,
+  `fmri_measures_extra.py`) were developed by the research team and are vendored
+  here verbatim so the toolbox reproduces the team's pipeline exactly.
+- ALFF/fALFF and ReHo follow the conventions of
+  [DPABI](http://rfmri.org/dpabi) / [REST](http://restfmri.net); INT follows
+  Watanabe et al. (2019); MSE uses multiscale sample entropy.
+- Data were provided [in part] by the **Human Connectome Project**, WU-Minn
+  Consortium (Principal Investigators: David Van Essen and Kamil Ugurbil;
+  1U54MH091657) funded by the 16 NIH Institutes and Centers that support the NIH
+  Blueprint for Neuroscience Research, and by the McDonnell Center for Systems
+  Neuroscience at Washington University.
+- Built on [NumPy](https://numpy.org), [SciPy](https://scipy.org),
+  [nibabel](https://nipy.org/nibabel/), [nilearn](https://nilearn.github.io),
+  [DIPY](https://dipy.org), [antropy](https://github.com/raphaelvallat/antropy),
+  [matplotlib](https://matplotlib.org), and [Flask](https://flask.palletsprojects.com).
+
+## License
+
+Released under the [MIT License](LICENSE).
