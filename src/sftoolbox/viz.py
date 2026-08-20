@@ -260,7 +260,10 @@ def plot_orientations(
             axes=ax,
             black_bg=False,
             annotate=True,
-            threshold=None,
+            # Hide exact zeros (out-of-mask / thresholded-out voxels) so the
+            # figure background stays white instead of taking the colormap's
+            # low-end colour.
+            threshold=1e-12,
             symmetric_cbar=symmetric,
             vmin=vmin,
             vmax=vmax,

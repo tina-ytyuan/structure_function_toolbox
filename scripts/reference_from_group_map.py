@@ -34,7 +34,11 @@ def main():
     ap.add_argument("--std", help="Group-SD NIfTI (optional; enables z-maps)")
     ap.add_argument("--mask", help="Mask NIfTI (default: finite & nonzero mean)")
     ap.add_argument("--n", type=int, default=0,
-                    help="Subjects in the group average (provenance only)")
+                    help="Subjects in the group average. Required (>1) for the "
+                         "single-subject t-test; also settable from --count.")
+    ap.add_argument("--count",
+                    help="Per-voxel subject-count NIfTI; its max sets n if --n "
+                         "is not given")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -58,6 +62,19 @@ def main():
     else:
         group_mask = np.isfinite(mean_map) & (mean_map != 0)
 
+    # Group maps often carry NaN outside the analysis mask. Restrict the mask to
+    # voxels where mean and SD are both finite, then zero the NaNs, so the stored
+    # reference never propagates NaN into a comparison.
+    group_mask = group_mask & np.isfinite(mean_map) & np.isfinite(sd_map)
+    mean_map = np.nan_to_num(mean_map, nan=0.0)
+    sd_map = np.nan_to_num(sd_map, nan=0.0)
+
+    n = int(args.n)
+    if n <= 0 and args.count:
+        count_map = np.asarray(io.load_nifti_data(args.count), dtype=float)
+        n = int(np.nanmax(count_map))
+        print(f"n taken from --count map: {n}")
+
     ref = {
         "measure": args.measure,
         "shape": np.array(mean_map.shape),
@@ -65,15 +82,19 @@ def main():
         "sd_map": sd_map,
         "group_mask": group_mask,
         "summaries": np.array([], dtype=float),   # no per-subject values here
-        "n": int(args.n),
+        "n": n,
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     np.savez(args.out, **ref)
+    tt = "yes" if (args.std and n > 1) else "no"
     print(
         f"Wrote {args.measure} reference -> {args.out}\n"
         f"  mean {mean_map.shape}, SD map: {'yes' if args.std else 'no'}, "
-        f"mask voxels {int(group_mask.sum())}"
+        f"n={n}, mask voxels {int(group_mask.sum())}, t-test enabled: {tt}"
     )
+    if args.std and n <= 1:
+        print("  WARNING: SD present but n<=1, so the t-test stays disabled. "
+              "Pass --n (e.g. --n 936) or --count.")
 
 
 if __name__ == "__main__":

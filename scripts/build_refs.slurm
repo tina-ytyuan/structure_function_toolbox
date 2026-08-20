@@ -60,7 +60,9 @@ LIMIT_ARG=""
 
 for M in "${MEASURES[@]}"; do
     echo "=== building reference: $M ==="
-    python scripts/build_measure_reference.py \
+    # -u: unbuffered stdout so progress appears in the log as it happens,
+    # rather than only when the process exits.
+    python -u scripts/build_measure_reference.py \
         --subjects-root "$SUBJECTS_ROOT" \
         --pattern "$PATTERN" \
         --measure "$M" \

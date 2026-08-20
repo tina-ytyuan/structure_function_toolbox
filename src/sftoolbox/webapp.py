@@ -130,6 +130,12 @@ STYLE = """
  a.btn-secondary{background:var(--secondary);color:var(--secondary-text);
         border-color:var(--border-strong);}
  a.btn-secondary:hover{background:var(--secondary-hover);text-decoration:none;}
+ a.btn-secondary.preparing{opacity:.65;pointer-events:none;position:relative;
+        padding-left:2rem;}
+ a.btn-secondary.preparing::before{content:"";position:absolute;left:.8rem;
+        top:50%;margin-top:-6px;width:11px;height:11px;border-radius:50%;
+        border:2px solid var(--border-strong);border-top-color:var(--accent);
+        animation:spin .8s linear infinite;}
  .dllink{font-size:.9rem;}
  .muted{color:var(--muted);font-size:.92rem;}
  .hint{color:var(--muted);font-size:.88rem;margin-top:.9rem;line-height:1.5;}
@@ -156,24 +162,71 @@ STYLE = """
 </style>
 """
 
-# Full-screen "Computing…" overlay shown on submit of /run and /demo forms, so
-# a slow measure (MSE/ReHo/Coherence-ReHo on a large volume) doesn't look frozen.
+# Full-screen "Computing…" overlay shown when a compute form is submitted, so a
+# slow job (MSE/ReHo/Coherence-ReHo on a large volume, or an FA re-threshold on a
+# full-resolution map) doesn't look frozen.
 OVERLAY = """
 <div id="busy"><div class="box">
   <div class="spin"></div>
-  <div class="t">Computing…</div>
-  <div class="muted">This can take a few minutes for MSE, ReHo, or
+  <div class="t" id="busy-title">Computing…</div>
+  <div class="muted" id="busy-note">This can take a few minutes for MSE, ReHo, or
   Coherence-ReHo on full-resolution data. Keep this tab open.</div>
 </div></div>
 <script>
-document.querySelectorAll('form').forEach(function(f){
-  var a = f.getAttribute('action') || '';
-  if (a.indexOf('/run') !== -1 || a.indexOf('/demo') !== -1) {
-    f.addEventListener('submit', function(){
-      var b = document.getElementById('busy'); if (b) b.style.display = 'flex';
-    });
+(function(){
+  function showBusy(title, note){
+    var b = document.getElementById('busy');
+    if (!b) return;
+    if (title) document.getElementById('busy-title').textContent = title;
+    if (note) document.getElementById('busy-note').textContent = note;
+    b.style.display = 'flex';
   }
-});
+  document.querySelectorAll('form').forEach(function(f){
+    var a = f.getAttribute('action') || '';
+    if (a.indexOf('/run') !== -1 || a.indexOf('/demo') !== -1) {
+      f.addEventListener('submit', function(){ showBusy(); });
+    } else if (a.indexOf('/fa') !== -1) {
+      f.addEventListener('submit', function(){
+        showBusy('Processing FA map…',
+          'Applying the threshold and rendering slices. Regional FA over a ' +
+          'full atlas can take a moment. Keep this tab open.');
+      });
+    }
+  });
+
+  // Server-side downloads (NIfTI/zip) are recomputed on request, so show an
+  // inline "preparing" state on the clicked button until the file arrives.
+  // A cookie set by the server tells us the download actually started.
+  document.querySelectorAll('a[data-prepare]').forEach(function(a){
+    a.addEventListener('click', function(){
+      if (a.dataset.busy === '1') return;
+      a.dataset.busy = '1';
+      var original = a.textContent;
+      a.classList.add('preparing');
+      a.textContent = 'Preparing…';
+      var done = false;
+      function finish(){
+        if (done) return;
+        done = true;
+        a.classList.remove('preparing');
+        a.textContent = original;
+        a.dataset.busy = '';
+      }
+      // Clear when the file lands (cookie flips) or after a generous timeout.
+      var token = 'dl_' + Math.random().toString(36).slice(2);
+      var started = Date.now();
+      var poll = setInterval(function(){
+        if (document.cookie.indexOf('sft_dl=') !== -1) {
+          document.cookie = 'sft_dl=; Max-Age=0; path=/';
+          clearInterval(poll); finish();
+        } else if (Date.now() - started > 600000) {
+          clearInterval(poll); finish();
+        }
+      }, 500);
+      void token;
+    });
+  });
+})();
 </script>
 """
 
@@ -430,6 +483,17 @@ RESULT = (
   <h2>{{ b.measure_label }}</h2>
   {% if b.params %}<p class="sub">{{ b.params }}</p>{% endif %}
 
+  <div class="actions" style="margin-top:.7rem;">
+    {% if b.download_url %}
+    <a class="btn-secondary" data-prepare="1" href="{{ b.download_url }}">Measure map (.nii.gz)</a>
+    {% endif %}
+    {% if b.stats_url %}
+    <a class="btn-secondary" data-prepare="1" href="{{ b.stats_url }}">t, p &amp; q maps (.nii.gz)</a>
+    {% endif %}
+    <a class="btn-secondary" download="{{ sid }}_{{ b.measure_key }}.png"
+       href="data:image/png;base64,{{ b.map_png }}">Measure image (PNG)</a>
+  </div>
+
   <h3 class="sh">Measure map</h3>
   <p class="sub">Axial, coronal, and sagittal slices through the measure map.</p>
   <img src="data:image/png;base64,{{ b.map_png }}">
@@ -496,18 +560,6 @@ RESULT = (
     difference. Rebuild the reference from individual subjects to get t/p maps.</p>
   {% endif %}
   {% if cmp and cmp.note %}<p class="muted" style="margin-top:.8rem;">{{ cmp.note }}</p>{% endif %}
-
-  <h3 class="sh">Downloads</h3>
-  <div class="actions" style="margin-top:.4rem;">
-    {% if b.download_url %}
-    <a class="btn-secondary" href="{{ b.download_url }}">Measure map (.nii.gz)</a>
-    {% endif %}
-    {% if b.stats_url %}
-    <a class="btn-secondary" href="{{ b.stats_url }}">t &amp; p maps (.nii.gz)</a>
-    {% endif %}
-    <a class="btn-secondary" download="{{ sid }}_{{ b.measure_key }}.png"
-       href="data:image/png;base64,{{ b.map_png }}">Measure image (PNG)</a>
-  </div>
 </div>
 {% endfor %}
 
@@ -662,7 +714,8 @@ FA_RESULT = (
            step="0.01" value="{{ thr }}" style="width:100%;"
            oninput="document.getElementById('fathr_val').textContent =
                     parseFloat(this.value).toFixed(2);"
-           onchange="document.getElementById('thrform').submit();">
+           onchange="var f=document.getElementById('thrform');
+                     if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }">
     <p class="phint">Release the slider to recompute at the new threshold.</p>
   </form>
 </div>
@@ -670,6 +723,17 @@ FA_RESULT = (
 <div class="card">
   <h2>FA map</h2>
   <p class="sub">Axial, coronal, and sagittal slices of the thresholded FA map.</p>
+  <div class="actions" style="margin-top:.2rem;margin-bottom:1rem;">
+    {% if fa_dl_url %}
+    <a class="btn-secondary" data-prepare="1" href="{{ fa_dl_url }}">Thresholded FA (.nii.gz)</a>
+    {% endif %}
+    <a class="btn-secondary" download="{{ sid }}_FA_thr{{ thr }}.png"
+       href="data:image/png;base64,{{ map_png }}">FA image (PNG)</a>
+    {% if roi_png %}
+    <a class="btn-secondary" download="{{ sid }}_regional_FA.png"
+       href="data:image/png;base64,{{ roi_png }}">Regional FA image (PNG)</a>
+    {% endif %}
+  </div>
   <img src="data:image/png;base64,{{ map_png }}">
   <div class="stats">
     <div class="stat"><div class="k">mean FA (kept)</div><div class="v">{{ mean }}</div></div>
@@ -690,6 +754,9 @@ FA_RESULT = (
 <div class="card muted">{{ roi_note }}</div>
 {% endif %}
 </main>
+"""
+    + OVERLAY
+    + """
 </body></html>
 """
 )
@@ -910,6 +977,11 @@ def _truthy(v):
     """Interpret an HTML checkbox / query value as a boolean."""
     return str(v).lower() in ("on", "true", "1", "yes")
 
+
+def _as_download(resp):
+    """Attach a marker cookie so the UI can clear its \"Preparing…\" state."""
+    resp.set_cookie("sft_dl", "1", max_age=60, path="/")
+    return resp
 
 def _hist_png(map3d, mask, exclude_zero=True):
     return _fig_to_b64(viz.plot_value_hist(map3d, mask, exclude_zero=exclude_zero))
@@ -1372,9 +1444,31 @@ def download_group():
         gmean = np.nan_to_num(np.nanmean(np.where(mstack, stack, np.nan), axis=0))
     out = CACHE_DIR / f"group_{measure}_average.nii.gz"
     nib.save(nib.Nifti1Image(gmean.astype(np.float32), affine), str(out))
-    return send_file(
+    return _as_download(send_file(
         str(out), as_attachment=True, download_name=f"group_{measure}_average.nii.gz"
-    )
+    ))
+
+
+@app.route("/download-fa")
+def download_fa():
+    """Return the FA map with the chosen threshold applied, as a NIfTI."""
+    import nibabel as nib
+
+    cached_fa = request.args.get("cached_fa", "")
+    thr = float(request.args.get("fa_threshold", 0.0) or 0.0)
+    sid = request.args.get("sid", "subject")
+    fa_p = CACHE_DIR / cached_fa
+    if not cached_fa or not fa_p.exists():
+        abort(404)
+    img = io.load_nifti(fa_p)
+    fa_map = np.asarray(img.get_fdata(), dtype=float)
+    out_map = fa_mod.apply_threshold(fa_map, thr)
+    out = CACHE_DIR / f"{sid}_FA_thr{thr:.2f}.nii.gz"
+    nib.save(nib.Nifti1Image(out_map.astype(np.float32), img.affine), str(out))
+    return _as_download(send_file(
+        str(out), as_attachment=True,
+        download_name=f"{sid}_FA_thr{thr:.2f}.nii.gz",
+    ))
 
 
 @app.route("/download-stats")
@@ -1424,10 +1518,10 @@ def download_stats():
             out = CACHE_DIR / f"{sid}_{measure}_{name}.nii.gz"
             nib.save(nib.Nifti1Image(arr.astype(np.float32), img.affine), str(out))
             zf.write(str(out), arcname=f"{sid}_{measure}_{name}.nii.gz")
-    return send_file(
+    return _as_download(send_file(
         str(zip_path), as_attachment=True,
         download_name=f"{sid}_{measure}_stats.zip",
-    )
+    ))
 
 
 @app.route("/download")
@@ -1465,9 +1559,9 @@ def download():
     out_img = nib.Nifti1Image(m.astype(np.float32), img.affine)
     out_path = CACHE_DIR / f"{sid}_{measure}.nii.gz"
     nib.save(out_img, str(out_path))
-    return send_file(
+    return _as_download(send_file(
         str(out_path), as_attachment=True, download_name=f"{sid}_{measure}.nii.gz"
-    )
+    ))
 
 
 @app.route("/pick-folder")
@@ -1565,7 +1659,9 @@ def fa_analyze():
     brain = fa_map > 0  # nonzero FA ~ within-brain support
     thr_map = fa_mod.apply_threshold(fa_map, thr)
     kept = thr_map > 0
-    map_png = _slices_png(thr_map, fa_img.affine, "fa", cmap="magma")
+    # Sequential map that starts light, so thresholded-out (zero) voxels read as
+    # white background rather than the near-black low end of magma.
+    map_png = _slices_png(thr_map, fa_img.affine, "fa", cmap="YlOrBr")
     hist_png = _hist_png(thr_map, kept)
     mean = f"{thr_map[kept].mean():.3f}" if kept.any() else "n/a"
     nvox = f"{int(kept.sum()):,}"
@@ -1601,6 +1697,12 @@ def fa_analyze():
         roi_png=roi_png,
         roi_note=roi_note,
         n_regions=n_regions,
+        fa_dl_url=(
+            "/download-fa?"
+            + urlencode({"cached_fa": cached_fa, "fa_threshold": f"{thr}", "sid": sid})
+            if cached_fa
+            else None
+        ),
         error=None,
     )
 
