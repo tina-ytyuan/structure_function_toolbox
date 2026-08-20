@@ -70,6 +70,10 @@ STYLE = """
  .card{background:var(--surface);border:1px solid var(--border);
        border-radius:var(--radius);padding:1.3rem 1.5rem;margin:1.1rem 0;}
  .card .sub{color:var(--muted);font-size:.92rem;margin:.1rem 0 1rem;}
+ h3.sh{font-size:.82rem;font-weight:700;text-transform:uppercase;
+       letter-spacing:.06em;color:var(--muted);margin:1.6rem 0 .5rem;
+       padding-top:.9rem;border-top:1px solid var(--border);}
+ h3.sh:first-of-type{border-top:none;padding-top:0;margin-top:1.1rem;}
  label{display:block;margin:.9rem 0 .35rem;font-weight:700;font-size:.92rem;
         color:var(--heading);}
  input[type=text],input[type=number],input[type=file],select{width:100%;
@@ -98,6 +102,13 @@ STYLE = """
  .params{border-top:1px solid var(--border);margin-top:1.2rem;padding-top:.4rem;}
  .params .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
  .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
+ .mcheck{display:flex;gap:1.75rem;flex-wrap:wrap;margin:.4rem 0 .2rem;}
+ .mcol{display:flex;flex-direction:column;gap:.15rem;min-width:200px;}
+ .mhdr{font-size:.78rem;font-weight:700;text-transform:uppercase;
+       letter-spacing:.05em;color:var(--muted);margin:.2rem 0 .3rem;}
+ .mcol label{display:flex;align-items:center;gap:.5rem;margin:0;font-weight:400;
+       font-size:.92rem;color:var(--text);}
+ .mcol label input{width:auto;}
  .pgroup{display:none;} .pgroup.active{display:block;}
  .mgroup{display:none;} .mgroup.active{display:block;}
  .pickrow{display:flex;gap:.6rem;align-items:stretch;}
@@ -133,7 +144,37 @@ STYLE = """
           font-variant-numeric:tabular-nums;}
  .err{background:var(--err-soft);border-color:#dcbfb8;color:var(--err);}
  .err b{color:var(--err);}
+ #busy{display:none;position:fixed;inset:0;z-index:100;
+       background:rgba(28,28,26,.55);align-items:center;justify-content:center;}
+ #busy .box{background:#fff;border:1px solid var(--border-strong);
+       border-radius:var(--radius);padding:1.4rem 1.8rem;max-width:26rem;
+       text-align:center;}
+ #busy .box .t{font-weight:700;margin-bottom:.4rem;}
+ @keyframes spin{to{transform:rotate(360deg);}}
+ #busy .spin{width:22px;height:22px;margin:0 auto .7rem;border:3px solid var(--border-strong);
+       border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;}
 </style>
+"""
+
+# Full-screen "Computing…" overlay shown on submit of /run and /demo forms, so
+# a slow measure (MSE/ReHo/Coherence-ReHo on a large volume) doesn't look frozen.
+OVERLAY = """
+<div id="busy"><div class="box">
+  <div class="spin"></div>
+  <div class="t">Computing…</div>
+  <div class="muted">This can take a few minutes for MSE, ReHo, or
+  Coherence-ReHo on full-resolution data. Keep this tab open.</div>
+</div></div>
+<script>
+document.querySelectorAll('form').forEach(function(f){
+  var a = f.getAttribute('action') || '';
+  if (a.indexOf('/run') !== -1 || a.indexOf('/demo') !== -1) {
+    f.addEventListener('submit', function(){
+      var b = document.getElementById('busy'); if (b) b.style.display = 'flex';
+    });
+  }
+});
+</script>
 """
 
 PAGE = (
@@ -150,8 +191,9 @@ PAGE = (
   <span class="tag">local &middot; fMRI measures</span>
 </div></header>
 <main>
-<p class="lead">Upload a subject's cleaned BOLD, choose an fMRI measure, set its
-parameters, and generate the map. Everything runs on your machine.</p>
+<p class="lead">Upload a subject's cleaned BOLD, check one or more fMRI measures,
+set their parameters, and generate all of them at once. Everything runs on your
+machine.</p>
 
 {% if error %}<div class="card err"><b>Problem:</b> {{ error }}</div>{% endif %}
 
@@ -189,29 +231,38 @@ parameters, and generate the map. Everything runs on your machine.</p>
   </div>
 
   <div class="params">
-    <h2 style="margin-top:.6rem;">2 &nbsp;fMRI measure</h2>
-    <label>Measure</label>
-    <select name="measure" id="measure" onchange="showParams()">
-      <optgroup label="Frequency-based">
-        <option value="alff">ALFF (broadband, 0.01-0.08 Hz)</option>
-        <option value="falff">fALFF (broadband, 0.01-0.08 Hz)</option>
-        <option value="alff_slow5">ALFF (slow-5, 0.01-0.027 Hz)</option>
-        <option value="alff_slow4">ALFF (slow-4, 0.027-0.073 Hz)</option>
-        <option value="falff_slow5">fALFF (slow-5, 0.01-0.027 Hz)</option>
-        <option value="falff_slow4">fALFF (slow-4, 0.027-0.073 Hz)</option>
-      </optgroup>
-      <optgroup label="Local synchrony">
-        <option value="reho">Regional Homogeneity (ReHo)</option>
-        <option value="coherence_reho">Coherence Regional Homogeneity</option>
-        <option value="rsfa">Resting-State Fluctuation Amplitude (RSFA)</option>
-        <option value="int">Intrinsic Neural Timescale (INT)</option>
-      </optgroup>
-      <optgroup label="Entropy">
-        <option value="mse">Multiscale Entropy (MSE)</option>
-      </optgroup>
-    </select>
+    <h2 style="margin-top:.6rem;">2 &nbsp;fMRI measures</h2>
+    <p class="sub">Check one or more. Checked measures reveal their parameters
+    below, and all are generated together.</p>
+    <div class="mcheck">
+      <div class="mcol">
+        <div class="mhdr">Frequency-based</div>
+        <label><input type="checkbox" name="measures" value="alff" onchange="showParams()"> ALFF (broadband)</label>
+        <label><input type="checkbox" name="measures" value="falff" onchange="showParams()"> fALFF (broadband)</label>
+        <label><input type="checkbox" name="measures" value="alff_slow5" onchange="showParams()"> ALFF (slow-5)</label>
+        <label><input type="checkbox" name="measures" value="alff_slow4" onchange="showParams()"> ALFF (slow-4)</label>
+        <label><input type="checkbox" name="measures" value="falff_slow5" onchange="showParams()"> fALFF (slow-5)</label>
+        <label><input type="checkbox" name="measures" value="falff_slow4" onchange="showParams()"> fALFF (slow-4)</label>
+      </div>
+      <div class="mcol">
+        <div class="mhdr">Local synchrony</div>
+        <label><input type="checkbox" name="measures" value="reho" onchange="showParams()"> Regional Homogeneity (ReHo)</label>
+        <label><input type="checkbox" name="measures" value="coherence_reho" onchange="showParams()"> Coherence Regional Homogeneity</label>
+        <label><input type="checkbox" name="measures" value="rsfa" onchange="showParams()"> RSFA</label>
+        <label><input type="checkbox" name="measures" value="int" onchange="showParams()"> Intrinsic Neural Timescale (INT)</label>
+      </div>
+      <div class="mcol">
+        <div class="mhdr">Entropy</div>
+        <label><input type="checkbox" name="measures" value="mse" onchange="showParams()"> Multiscale Entropy (MSE)</label>
+      </div>
+    </div>
+    <p class="phint">MSE, ReHo, and Coherence-ReHo are computed per voxel and can
+    take several minutes on a full-resolution brain; upload a mask below to
+    restrict them, or run heavy measures on a cluster. The frequency measures are
+    fast.</p>
 
-    <!-- Shared acquisition params (used by every measure) -->
+    <!-- Shared acquisition params (shown only when a measure is checked) -->
+    <div class="needs-measure" style="display:none;">
     <div class="row">
       <div><label>TR (seconds)</label>
            <input type="number" name="alff_tr" step="0.01" value="0.72"></div>
@@ -223,6 +274,7 @@ parameters, and generate the map. Everything runs on your machine.</p>
     <p class="phint">TR sets the frequency axis. Low/High define the band for
     ALFF, fALFF, RSFA, and Coherence-ReHo; the slow-4/slow-5 measures use their
     own fixed bands.</p>
+    </div>
 
     <!-- ReHo params -->
     <div class="pgroup" data-measure="reho">
@@ -259,16 +311,18 @@ parameters, and generate the map. Everything runs on your machine.</p>
     </div>
   </div>
 
+    <div class="needs-measure" style="display:none;">
     <label style="font-weight:400;display:flex;align-items:center;gap:.5rem;margin-top:1rem;">
       <input type="checkbox" name="include_zeros" value="on" style="width:auto;">
       Include zero-valued voxels in the value distribution
     </label>
     <p class="phint">Off by default: exact-zero voxels (mask voxels the measure
     couldn't compute, or image edges) otherwise pile up as a spike at 0.</p>
+    </div>
   </div>
 
   <div class="actions">
-    <button type="submit" class="btn-primary">Generate measure</button>
+    <button type="submit" class="btn-primary">Generate measures</button>
   </div>
 </form>
 
@@ -320,11 +374,21 @@ function pickFolder(){
       '\\nYou can paste the path manually.'); }
   }).catch(function(e){ alert('Could not open picker: ' + e); });
 }
+function checkedMeasures(){
+  return Array.prototype.map.call(
+    document.querySelectorAll('input[name="measures"]:checked'),
+    function(c){ return c.value; });
+}
 function showParams(){
-  var m = document.getElementById('measure').value;
+  var checked = checkedMeasures();
+  var any = checked.length > 0;
+  document.querySelectorAll('.needs-measure').forEach(function(el){
+    el.style.display = any ? '' : 'none';
+  });
   document.querySelectorAll('.pgroup').forEach(function(g){
     var ms = g.getAttribute('data-measure').split(' ');
-    g.classList.toggle('active', ms.indexOf(m) !== -1);
+    var on = ms.some(function(x){ return checked.indexOf(x) !== -1; });
+    g.classList.toggle('active', on);
   });
 }
 function showMode(){
@@ -336,6 +400,9 @@ function showMode(){
 showParams(); showMode();
 </script>
 </main>
+"""
+    + OVERLAY
+    + """
 </body></html>
 """
 )
@@ -356,74 +423,101 @@ RESULT = (
 <main>
 <a class="back" href="/">&larr; New analysis</a>
 <h2 style="font-size:1.25rem;margin:.3rem 0 .2rem;">{{ sid }}</h2>
-<p class="muted">{{ measure_label }}{% if params %} &middot; {{ params }}{% endif %}</p>
+<p class="muted">{{ blocks|length }} measure{{ '' if blocks|length == 1 else 's' }}</p>
 
+{% for b in blocks %}
 <div class="card">
-  <h2>{{ measure_label }}</h2>
-  <p class="sub">Axial, coronal, and sagittal slices through the measure map.</p>
-  <img src="data:image/png;base64,{{ map_png }}">
-  <div class="stats">
-    <div class="stat"><div class="k">mean</div><div class="v">{{ mean }}</div></div>
-    <div class="stat"><div class="k">median</div><div class="v">{{ median }}</div></div>
-    <div class="stat"><div class="k">masked voxels</div><div class="v">{{ nvox }}</div></div>
-  </div>
-  <img src="data:image/png;base64,{{ hist_png }}" style="margin-top:1rem;">
-  <div class="actions">
-    {% if download_url %}
-    <a class="btn-secondary" href="{{ download_url }}">Download map (.nii.gz)</a>
-    {% endif %}
-    <a class="btn-secondary" download="{{ sid }}_{{ measure_key }}.png"
-       href="data:image/png;base64,{{ map_png }}">Download image (PNG)</a>
-  </div>
-</div>
+  <h2>{{ b.measure_label }}</h2>
+  {% if b.params %}<p class="sub">{{ b.params }}</p>{% endif %}
 
-{% if cmp and cmp.mode == 'z' %}
-  {% if cmp.compare_png %}
-  <div class="card">
-    <h2>Subject vs. cohort</h2>
-    <p class="sub">Where this subject's mean {{ measure_label }} falls among
-    {{ cmp.n }} reference subjects.</p>
-    <div class="stats" style="margin-bottom:.8rem;">
-      <div class="stat"><div class="k">percentile</div><div class="v">{{ cmp.pct }}</div></div>
+  <h3 class="sh">Measure map</h3>
+  <p class="sub">Axial, coronal, and sagittal slices through the measure map.</p>
+  <img src="data:image/png;base64,{{ b.map_png }}">
+  <div class="stats">
+    <div class="stat"><div class="k">mean</div><div class="v">{{ b.mean }}</div></div>
+    <div class="stat"><div class="k">median</div><div class="v">{{ b.median }}</div></div>
+    <div class="stat"><div class="k">masked voxels</div><div class="v">{{ b.nvox }}</div></div>
+  </div>
+
+  <h3 class="sh">Value distribution</h3>
+  <img src="data:image/png;base64,{{ b.hist_png }}">
+
+  {% set cmp = b.cmp %}
+  {% if cmp and cmp.mode == 't' %}
+    <h3 class="sh">Comparison to group (t-test)</h3>
+    <p class="sub">Single-subject vs group t-test (Crawford &amp; Howell) against
+    {{ cmp.n }} reference subjects, df = {{ cmp.df }}. Positive t = above the
+    group.</p>
+    <div class="stats">
+      <div class="stat"><div class="k">mean t</div><div class="v">{{ cmp.t_mean }}</div></div>
+      <div class="stat"><div class="k">max |t|</div><div class="v">{{ cmp.t_absmax }}</div></div>
+      <div class="stat"><div class="k">voxels tested</div><div class="v">{{ cmp.n_tested }}</div></div>
     </div>
-    <img src="data:image/png;base64,{{ cmp.compare_png }}">
-  </div>
-  {% endif %}
-  {% if cmp.map_png %}
-  <div class="card">
-    <h2>Deviation z-map</h2>
-    <p class="sub">Voxelwise (subject &minus; cohort mean) / cohort SD. Red =
-    above the cohort, blue = below.</p>
+    <div class="stats" style="margin-top:.9rem;">
+      <div class="stat"><div class="k">p&lt;0.05 uncorrected</div><div class="v">{{ cmp.n_sig }}</div></div>
+      <div class="stat"><div class="k">FDR q&lt;0.05</div><div class="v">{{ cmp.n_fdr }}</div></div>
+      <div class="stat"><div class="k">% surviving FDR</div><div class="v">{{ cmp.pct_fdr }}</div></div>
+    </div>
+    <p class="sub" style="margin-top:1rem;">t map (uncorrected) — red = above the
+    group, blue = below.</p>
+    <img src="data:image/png;base64,{{ cmp.t_png }}">
+    <p class="sub" style="margin-top:1rem;">t map, FDR-corrected (q&lt;0.05;
+    non-surviving voxels set to 0). BH threshold on raw p: {{ cmp.p_thr }}.</p>
+    <img src="data:image/png;base64,{{ cmp.t_fdr_png }}">
+    <p class="phint">Report the FDR-corrected map. Benjamini-Hochberg controls the
+    expected proportion of false positives across the {{ cmp.n_tested }} tested
+    voxels; the uncorrected map is shown for reference only.</p>
+  {% elif cmp and cmp.mode == 'z' %}
+    <h3 class="sh">Comparison to cohort</h3>
+    {% if cmp.compare_png %}
+    <div class="stats">
+      <div class="stat"><div class="k">cohort percentile</div><div class="v">{{ cmp.pct }}</div></div>
+    </div>
+    <img src="data:image/png;base64,{{ cmp.compare_png }}" style="margin-top:.6rem;">
+    {% endif %}
+    {% if cmp.map_png %}
+    <p class="sub" style="margin-top:1.1rem;">Deviation z-map: (subject &minus;
+    cohort mean) / SD. Red = above, blue = below.</p>
     <img src="data:image/png;base64,{{ cmp.map_png }}">
-  </div>
-  {% endif %}
-{% elif cmp and cmp.mode == 'diff' %}
-  <div class="card">
-    <h2>Subject vs. group average</h2>
-    <p class="sub">Difference from the group-average {{ measure_label }}{% if cmp.n %}
-    (n={{ cmp.n }}){% endif %}. No across-subject SD available, so this is a raw
-    difference, not a z-score.</p>
-    <div class="stats" style="margin-bottom:.8rem;">
+    {% endif %}
+  {% elif cmp and cmp.mode == 'diff' %}
+    <h3 class="sh">Comparison to group average</h3>
+    <div class="stats">
       <div class="stat"><div class="k">subject mean</div><div class="v">{{ cmp.subj_mean }}</div></div>
       <div class="stat"><div class="k">group mean</div><div class="v">{{ cmp.grp_mean }}</div></div>
       <div class="stat"><div class="k">difference</div><div class="v">{{ cmp.diff_mean }}</div></div>
     </div>
-  </div>
-  {% if cmp.map_png %}
-  <div class="card">
-    <h2>Difference from average</h2>
-    <p class="sub">Voxelwise subject &minus; group mean. Red = above average,
-    blue = below.</p>
+    {% if cmp.map_png %}
+    <p class="sub" style="margin-top:1.1rem;">Difference from group average
+    (subject &minus; mean). Red = above average, blue = below.</p>
     <img src="data:image/png;base64,{{ cmp.map_png }}">
-  </div>
+    {% endif %}
+    <p class="phint">No across-subject SD in this reference, so this is a raw
+    difference. Rebuild the reference from individual subjects to get t/p maps.</p>
   {% endif %}
-{% endif %}
+  {% if cmp and cmp.note %}<p class="muted" style="margin-top:.8rem;">{{ cmp.note }}</p>{% endif %}
 
-{% if cmp and cmp.note %}<div class="card muted">{{ cmp.note }}</div>{% endif %}
+  <h3 class="sh">Downloads</h3>
+  <div class="actions" style="margin-top:.4rem;">
+    {% if b.download_url %}
+    <a class="btn-secondary" href="{{ b.download_url }}">Measure map (.nii.gz)</a>
+    {% endif %}
+    {% if b.stats_url %}
+    <a class="btn-secondary" href="{{ b.stats_url }}">t &amp; p maps (.nii.gz)</a>
+    {% endif %}
+    <a class="btn-secondary" download="{{ sid }}_{{ b.measure_key }}.png"
+       href="data:image/png;base64,{{ b.map_png }}">Measure image (PNG)</a>
+  </div>
+</div>
+{% endfor %}
+
 {% if notes %}<div class="card muted">{{ notes }}</div>{% endif %}
 
 {{ controls|safe }}
 </main>
+"""
+    + OVERLAY
+    + """
 </body></html>
 """
 )
@@ -684,9 +778,9 @@ def _compute(measure: str, bold: np.ndarray, form, mask=None):
     return m, mask_out, _params_str(measure, p), cmap, False
 
 
-def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None,
+def _controls_html(mode, selected, folder=None, cached=None, form=None, sid=None,
                    cached_mask=None):
-    """A compact 'change measure & regenerate' form for the results pages.
+    """A compact 'change measures & regenerate' form for the results pages.
 
     Carries the datasource (folder path, cached upload, or folder+subject) as
     hidden fields so the user never re-selects it. In demo mode it re-runs /demo.
@@ -718,50 +812,45 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None,
         "subject": "same subject",
     }.get(mode, "same subject")
 
-    def opt(v, label):
-        return (
-            f'<option value="{v}"{" selected" if v == measure else ""}>{label}</option>'
-        )
+    sel = set(selected if isinstance(selected, (list, tuple, set)) else [selected])
 
     def rsel(v):
         return " selected" if reho_c == v else ""
+
+    def cb(v, label):
+        c = " checked" if v in sel else ""
+        return (f'<label><input type="checkbox" name="measures" value="{v}"'
+                f'{c} onchange="showParams()"> {label}</label>')
 
     mse_scales = g("mse_scales", "1 2 3 4 5")
     mse_m = g("mse_m", "2")
     mse_r = g("mse_r", "0.15")
     max_lag = g("int_max_lag", "20")
 
-    freq_opts = (
-        opt("alff", "ALFF (broadband)")
-        + opt("falff", "fALFF (broadband)")
-        + opt("alff_slow5", "ALFF (slow-5)")
-        + opt("alff_slow4", "ALFF (slow-4)")
-        + opt("falff_slow5", "fALFF (slow-5)")
-        + opt("falff_slow4", "fALFF (slow-4)")
-    )
-    sync_opts = (
-        opt("reho", "Regional Homogeneity (ReHo)")
-        + opt("coherence_reho", "Coherence Regional Homogeneity")
-        + opt("rsfa", "Resting-State Fluctuation Amplitude (RSFA)")
-        + opt("int", "Intrinsic Neural Timescale (INT)")
-    )
-    entropy_opts = opt("mse", "Multiscale Entropy (MSE)")
-    options = (f'<optgroup label="Frequency-based">{freq_opts}</optgroup>'
-               f'<optgroup label="Local synchrony">{sync_opts}</optgroup>'
-               f'<optgroup label="Entropy">{entropy_opts}</optgroup>')
+    freq_cb = (cb("alff", "ALFF (broadband)") + cb("falff", "fALFF (broadband)")
+               + cb("alff_slow5", "ALFF (slow-5)") + cb("alff_slow4", "ALFF (slow-4)")
+               + cb("falff_slow5", "fALFF (slow-5)") + cb("falff_slow4", "fALFF (slow-4)"))
+    sync_cb = (cb("reho", "Regional Homogeneity (ReHo)")
+               + cb("coherence_reho", "Coherence Regional Homogeneity")
+               + cb("rsfa", "RSFA") + cb("int", "Intrinsic Neural Timescale (INT)"))
+    entropy_cb = cb("mse", "Multiscale Entropy (MSE)")
+    checks = (f'<div class="mcol"><div class="mhdr">Frequency-based</div>{freq_cb}</div>'
+              f'<div class="mcol"><div class="mhdr">Local synchrony</div>{sync_cb}</div>'
+              f'<div class="mcol"><div class="mhdr">Entropy</div>{entropy_cb}</div>')
 
     return f'''
 <form method="post" action="{action}" class="card">
-  <h2>Change measure</h2>
-  <p class="sub">Switch measure or adjust parameters and regenerate &mdash; {same}, no re-selecting.</p>
+  <h2>Change measures</h2>
+  <p class="sub">Adjust the checked measures or their parameters and regenerate &mdash; {same}, no re-selecting.</p>
   {hidden}
-  <label>Measure</label>
-  <select name="measure" id="measure" onchange="showParams()">{options}</select>
+  <div class="mcheck">{checks}</div>
 
+  <div class="needs-measure" style="display:none;">
   <div class="row">
     <div><label>TR (s)</label><input type="number" name="alff_tr" step="0.01" value="{tr}"></div>
     <div><label>Low (Hz)</label><input type="number" name="alff_low" step="0.001" value="{lo}"></div>
     <div><label>High (Hz)</label><input type="number" name="alff_high" step="0.001" value="{hi}"></div>
+  </div>
   </div>
   <div class="pgroup" data-measure="reho">
     <label>Cluster size</label>
@@ -783,18 +872,26 @@ def _controls_html(mode, measure, folder=None, cached=None, form=None, sid=None,
       <div><label>r</label><input type="number" name="mse_r" step="0.01" value="{mse_r}"></div>
     </div>
   </div>
+  <div class="needs-measure" style="display:none;">
   <label style="font-weight:400;display:flex;align-items:center;gap:.5rem;margin-top:.9rem;">
     <input type="checkbox" name="include_zeros" value="on"{inc_zeros} style="width:auto;">
     Include zero-valued voxels in the value distribution
   </label>
+  </div>
 
   <div class="actions"><button class="btn-primary">Regenerate</button></div>
   <script>
   function showParams(){{
-    var m=document.getElementById('measure').value;
+    var checked=Array.prototype.map.call(
+      document.querySelectorAll('input[name="measures"]:checked'),
+      function(c){{ return c.value; }});
+    var any=checked.length>0;
+    document.querySelectorAll('.needs-measure').forEach(function(el){{
+      el.style.display = any ? '' : 'none';
+    }});
     document.querySelectorAll('.pgroup').forEach(function(g){{
       var ms=g.getAttribute('data-measure').split(' ');
-      g.classList.toggle('active', ms.indexOf(m)!==-1);
+      g.classList.toggle('active', ms.some(function(x){{return checked.indexOf(x)!==-1;}}));
     }});
   }}
   showParams();
@@ -883,7 +980,40 @@ def _compare_pngs(measure, map3d, mask, affine):
 
     n = int(ref["n"]) if "n" in ref else 0
 
-    # z-score path (needs an across-subject SD map).
+    # t-test path: one subject vs the group (needs SD and n > 1).
+    if measure_norm.can_ttest(ref):
+        try:
+            t, p, tmask, df = measure_norm.ttest_vs_group(map3d, mask, ref)
+        except ValueError as e:
+            return {"mode": "error", "note": str(e)}
+        tv = t[tmask]
+        pv = p[tmask]
+        n_sig = int((pv < 0.05).sum())
+        # FDR (Benjamini-Hochberg) across tested voxels — the standard
+        # multiple-comparison correction for voxelwise maps.
+        q_vals, p_thr = measure_norm.fdr_correct(pv, alpha=0.05)
+        n_fdr = int((q_vals < 0.05).sum())
+        q_map = np.ones_like(p)
+        q_map[tmask] = q_vals
+        t_fdr = np.where(tmask & (q_map < 0.05), t, 0.0)
+        out = {
+            "mode": "t", "n": n, "df": df, "note": "",
+            "t_mean": f"{np.mean(tv):+.3f}" if tv.size else "n/a",
+            "t_absmax": f"{np.max(np.abs(tv)):.2f}" if tv.size else "n/a",
+            "n_tested": f"{int(tmask.sum()):,}",
+            "n_sig": f"{n_sig:,}",
+            "pct_sig": f"{100.0 * n_sig / tv.size:.1f}%" if tv.size else "n/a",
+            "n_fdr": f"{n_fdr:,}",
+            "pct_fdr": f"{100.0 * n_fdr / tv.size:.1f}%" if tv.size else "n/a",
+            "p_thr": f"{p_thr:.2e}" if p_thr > 0 else "none survive",
+            "t_png": _slices_png(t, affine, measure, symmetric=True, cmap="RdBu_r"),
+            "t_fdr_png": _slices_png(t_fdr, affine, measure, symmetric=True,
+                                     cmap="RdBu_r"),
+            "map_png": None,
+        }
+        return out
+
+    # z-score path (SD map but no usable n).
     if measure_norm.has_sd(ref):
         z, _zm, summary, pct = measure_norm.compare(map3d, mask, ref)
         out = {"mode": "z", "n": n, "note": "",
@@ -919,99 +1049,80 @@ def _compare_pngs(measure, map3d, mask, affine):
     return out
 
 
-def _render(
-    sid,
-    measure,
-    map3d,
-    mask,
-    params,
-    notes,
-    affine,
-    mode="single",
-    folder=None,
-    cached=None,
-    cached_mask=None,
-    form=None,
-):
-    label = measures.MEASURES.get(measure, {}).get("label", measure)
-    exclude_zero = not _truthy(form.get("include_zeros") if form is not None else None)
-    png = _slices_png(map3d, affine, measure)
-    hist_png = _hist_png(map3d, mask, exclude_zero=exclude_zero)
+def _measure_block(measure, map3d, mask, affine, params_str, exclude_zero,
+                   download_url=None, compare=True, stats_url=None):
+    """Build one measure's result-card dict for the RESULT template."""
     mean, median, nvox = _stats(map3d, mask)
-    cmp = _compare_pngs(measure, map3d, mask, affine)
-    controls = _controls_html(
-        mode, measure, folder=folder, cached=cached, form=form, sid=sid,
-        cached_mask=cached_mask
-    )
-    download_url = _download_url(
-        measure, mode, sid, cached=cached, folder=folder, form=form
-    )
-    return render_template_string(
-        RESULT,
-        sid=sid,
-        measure_label=label,
-        measure_key=measure,
-        params=params,
-        map_png=png,
-        hist_png=hist_png,
-        mean=mean,
-        median=median,
-        nvox=nvox,
-        notes=notes,
-        controls=controls,
-        cmp=cmp,
-        download_url=download_url,
-    )
+    cmp = _compare_pngs(measure, map3d, mask, affine) if compare else None
+    return {
+        "measure_key": measure,
+        "measure_label": measures.MEASURES.get(measure, {}).get("label", measure),
+        "params": params_str,
+        "map_png": _slices_png(map3d, affine, measure),
+        "hist_png": _hist_png(map3d, mask, exclude_zero=exclude_zero),
+        "mean": mean, "median": median, "nvox": nvox,
+        "download_url": download_url,
+        # t/p NIfTI export is only meaningful when the t-test actually ran.
+        "stats_url": stats_url if (cmp and cmp.get("mode") == "t") else None,
+        "cmp": cmp,
+    }
 
 
-def _render_batch(measure, results, params, notes, folder=None, form=None):
-    label = measures.MEASURES.get(measure, {}).get("label", measure)
-    controls = _controls_html("folder", measure, folder=folder, form=form)
-    base_q = dict(_param_args(form), measure=measure, folder=folder or "")
+def _render(sid, computed, notes, mode="single", folder=None, cached=None,
+            cached_mask=None, form=None):
+    """Render one or more measures for a single subject.
 
-    # Group-average map (voxelwise mean across subjects on a common grid).
-    # Only group-level results are surfaced; individual subject maps and
-    # per-subject stats are intentionally withheld to keep the cohort
-    # de-identified.
-    group_png = group_hist_png = group_dl_url = None
-    group_mean = group_median = None
-    group_note = ""
-    ga = _group_average(results)
-    if ga is not None:
+    ``computed`` is a list of (measure, map3d, mask, affine, params_str).
+    """
+    exclude_zero = not _truthy(form.get("include_zeros") if form is not None else None)
+    blocks = []
+    for measure, map3d, mask, affine, pstr in computed:
+        dl = _download_url(measure, mode, sid, cached=cached, folder=folder, form=form)
+        st = None
+        if mode == "single" and cached:
+            st = "/download-stats?" + urlencode(
+                dict(_param_args(form), measure=measure, sid=sid, cached=cached))
+        blocks.append(_measure_block(measure, map3d, mask, affine, pstr,
+                                     exclude_zero, download_url=dl, compare=True,
+                                     stats_url=st))
+    selected = [c[0] for c in computed]
+    controls = _controls_html(mode, selected, folder=folder, cached=cached,
+                              form=form, sid=sid, cached_mask=cached_mask)
+    return render_template_string(RESULT, sid=sid, blocks=blocks, notes=notes,
+                                  controls=controls)
+
+
+def _render_batch(measures_list, results_by_measure, notes, folder=None,
+                  form=None):
+    """Render group-average results for a folder, one card per measure.
+
+    Only group-level maps/stats are shown (no per-subject data), to keep the
+    cohort de-identified. ``results_by_measure`` maps measure -> list of
+    (sid, map3d, mask, affine).
+    """
+    exclude_zero = not _truthy(form.get("include_zeros") if form is not None else None)
+    n_subj = max((len(r) for r in results_by_measure.values()), default=0)
+    blocks = []
+    for measure in measures_list:
+        results = results_by_measure.get(measure, [])
+        ga = _group_average(results)
+        if ga is None:
+            continue
         gmean, gmask, gaffine = ga
-        group_png = _slices_png(gmean, gaffine, measure)
-        group_hist_png = _hist_png(gmean, gmask)
-        group_dl_url = "/download-group?" + urlencode(base_q)
-        gvals = gmean[gmask]
-        if gvals.size:
-            group_mean = f"{np.mean(gvals):.3f}"
-            group_median = f"{np.median(gvals):.3f}"
-    elif len(results) >= 2:
-        group_note = (
-            "A voxelwise group average needs all subjects on the same "
-            "grid/space; these subjects differ, so no average is shown."
-        )
-    elif len(results) == 1:
-        group_note = (
-            "Only one subject was processed; a group average needs at "
-            "least two. Individual maps are not shown."
-        )
-
-    return render_template_string(
-        BATCH,
-        n=len(results),
-        measure_label=label,
-        measure_key=measure,
-        params=params,
-        notes=notes,
-        controls=controls,
-        group_png=group_png,
-        group_hist_png=group_hist_png,
-        group_dl_url=group_dl_url,
-        group_note=group_note,
-        group_mean=group_mean,
-        group_median=group_median,
-    )
+        base_q = dict(_param_args(form), measure=measure, folder=folder or "")
+        block = _measure_block(measure, gmean, gmask, gaffine,
+                               f"group average of {len(results)} subjects",
+                               exclude_zero,
+                               download_url="/download-group?" + urlencode(base_q),
+                               compare=False)
+        blocks.append(block)
+    if not blocks:
+        notes = (notes + " No group average could be formed (subjects need a "
+                 "common grid, and at least two are required).").strip()
+    sid = f"{n_subj} subjects · group average (de-identified)"
+    controls = _controls_html("folder", measures_list, folder=folder, form=form)
+    return render_template_string(RESULT, sid=sid, blocks=blocks, notes=notes,
+                                  controls=controls)
 
 
 # ---- routes -----------------------------------------------------------
@@ -1026,10 +1137,28 @@ def _page_error(msg):
     return render_template_string(PAGE, error=msg, max_batch=MAX_BATCH)
 
 
+def _selected_measures(form):
+    """Measures chosen via checkboxes (name=measures), or a single ?measure."""
+    sel = [m for m in form.getlist("measures") if m in measures.MEASURES]
+    if not sel:
+        one = form.get("measure")
+        if one in measures.MEASURES:
+            sel = [one]
+    # de-duplicate, preserve order
+    seen, out = set(), []
+    for m in sel:
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
 @app.route("/run", methods=["POST"])
 def run():
-    measure = request.form.get("measure", "reho")
     mode = request.form.get("mode", "single")
+    selected = _selected_measures(request.form)
+    if not selected:
+        return _page_error("Select at least one measure.")
 
     if mode == "folder":
         folder = (request.form.get("folder") or "").strip()
@@ -1045,27 +1174,32 @@ def run():
         items = list(bolds.items())
         extra = len(items) - MAX_BATCH
         items = items[:MAX_BATCH]
-        results, skipped = [], []
+        results_by_measure = {m: [] for m in selected}
+        skipped = []
         for sid, path in items:
             try:
                 img = io.load_nifti(path)
                 bold = np.asarray(img.get_fdata())
                 if bold.ndim != 4:
                     raise ValueError(f"not 4D (shape {bold.shape})")
-                map3d, mask, params, _c, _d = _compute(measure, bold, request.form)
-                results.append((sid, map3d, mask, img.affine))
             except Exception as e:
                 skipped.append(f"{sid}: {e}")
-        if not results:
+                continue
+            for measure in selected:
+                try:
+                    map3d, mask, _p, _c, _d = _compute(measure, bold, request.form)
+                    results_by_measure[measure].append((sid, map3d, mask, img.affine))
+                except Exception as e:
+                    skipped.append(f"{sid}/{measure}: {e}")
+        if not any(results_by_measure.values()):
             return _page_error("No subjects processed. " + "; ".join(skipped))
         notes = ""
         if extra > 0:
             notes += f"Showing first {MAX_BATCH}; {extra} more not processed. "
         if skipped:
-            notes += f"Skipped {len(skipped)}: " + "; ".join(skipped)
-        return _render_batch(
-            measure, results, params, notes, folder=folder, form=request.form
-        )
+            notes += f"Skipped {len(skipped)}: " + "; ".join(skipped[:10])
+        return _render_batch(selected, results_by_measure, notes,
+                             folder=folder, form=request.form)
 
     # Single-subject: use a cached upload if present (measure switch), else the
     # newly uploaded file, saved to the cache so later switches need no re-upload.
@@ -1100,55 +1234,77 @@ def run():
             mfs.save(str(CACHE_DIR / cached_mask))
             mask_arr = np.asarray(io.load_nifti_data(CACHE_DIR / cached_mask))
 
-    try:
-        map3d, mask, params, _c, _d = _compute(measure, bold, request.form,
-                                               mask=mask_arr)
-    except Exception as e:
-        return _page_error(str(e))
-    return _render(
-        sid,
-        measure,
-        map3d,
-        mask,
-        params,
-        notes="",
-        affine=img.affine,
-        mode="single",
-        cached=cached,
-        cached_mask=cached_mask,
-        form=request.form,
-    )
+    computed, skipped = [], []
+    for measure in selected:
+        try:
+            map3d, mask, pstr, _c, _d = _compute(measure, bold, request.form,
+                                                 mask=mask_arr)
+            computed.append((measure, map3d, mask, img.affine, pstr))
+        except Exception as e:
+            skipped.append(f"{measure}: {e}")
+    if not computed:
+        return _page_error("No measures computed. " + "; ".join(skipped))
+    notes = f"Skipped {'; '.join(skipped)}" if skipped else ""
+    return _render(sid, computed, notes=notes, mode="single", cached=cached,
+                   cached_mask=cached_mask, form=request.form)
 
 
-def _synthetic_bold(dim=28, T=120, seed=0):
-    """Brain-like synthetic 4D BOLD for demos.
+_DEMO_BRAIN = None  # cached (mask, affine) so repeated demos don't reload
 
-    A spherical "brain" filled with a handful of smooth spatial components, each
-    carrying a low-frequency time course. This gives spatially coherent signal
-    (so ReHo, ALFF, and seed FC show real structure) instead of salt-and-pepper
-    noise, and a non-flat value distribution.
+
+def _demo_brain():
+    """A real MNI152 brain mask + affine for demos, at a coarse (fast) grid.
+
+    Uses nilearn's bundled MNI152 brain mask (no download) at 4 mm so the demo
+    slices look like an actual brain rather than a sphere, while staying small
+    enough (~30k voxels) that ReHo/MSE compute in a few seconds. Falls back to
+    downsampling the 2 mm mask on older nilearn versions.
     """
+    global _DEMO_BRAIN
+    if _DEMO_BRAIN is not None:
+        return _DEMO_BRAIN
+    from nilearn.datasets import load_mni152_brain_mask
+    try:
+        img = load_mni152_brain_mask(resolution=4)
+        mask = np.asarray(img.get_fdata()) > 0
+        affine = img.affine
+    except TypeError:  # older nilearn without a resolution argument
+        img = load_mni152_brain_mask()
+        mask = (np.asarray(img.get_fdata()) > 0)[::2, ::2, ::2]
+        affine = img.affine.copy()
+        affine[:3, :3] *= 2
+    _DEMO_BRAIN = (mask, affine)
+    return _DEMO_BRAIN
+
+
+def _synthetic_bold(T=100, seed=0):
+    """Brain-shaped synthetic 4D BOLD for demos.
+
+    Fills a real MNI152 brain mask with a handful of smooth spatial components,
+    each carrying a low-frequency time course, plus noise. Spatially coherent
+    signal (so ReHo/ALFF/etc. show real structure) inside an anatomically shaped
+    brain, with background exactly zero. Returns (bold_4d, affine).
+    """
+    mask, affine = _demo_brain()
+    X, Y, Z = mask.shape
     rng = np.random.default_rng(seed)
-    a, b, c = np.mgrid[0:dim, 0:dim, 0:dim]
-    ctr = (dim - 1) / 2
-    radius = dim * 0.42
-    dist = np.sqrt((a - ctr) ** 2 + (b - ctr) ** 2 + (c - ctr) ** 2)
-    mask = dist <= radius
+    a, b, c = np.mgrid[0:X, 0:Y, 0:Z].astype(np.float64)
+    span = max(X, Y, Z)
 
     t = np.arange(T)
-    signal = np.zeros((dim, dim, dim, T), dtype=np.float64)
-    for _ in range(6):
-        cx, cy, cz = rng.uniform(dim * 0.30, dim * 0.70, size=3)
-        sig = rng.uniform(dim * 0.10, dim * 0.20)
+    signal = np.zeros((X, Y, Z, T), dtype=np.float64)
+    for _ in range(8):
+        cx, cy, cz = rng.uniform(0.28, 0.72, size=3) * np.array([X, Y, Z])
+        sig = rng.uniform(0.08, 0.16) * span
         blob = np.exp(-(((a - cx) ** 2 + (b - cy) ** 2 + (c - cz) ** 2) / (2 * sig**2)))
         freq = rng.uniform(0.012, 0.09)
         phase = rng.uniform(0, 2 * np.pi)
         tc = np.sin(2 * np.pi * freq * t + phase)
         signal += blob[..., None] * tc[None, None, None, :]
 
-    noise = rng.standard_normal((dim, dim, dim, T)) * 0.25
+    noise = rng.standard_normal((X, Y, Z, T)) * 0.25
     bold = (signal + noise) * mask[..., None]
-    return bold
+    return bold, affine
 
 
 @app.route("/subject", methods=["GET", "POST"])
@@ -1218,6 +1374,59 @@ def download_group():
     nib.save(nib.Nifti1Image(gmean.astype(np.float32), affine), str(out))
     return send_file(
         str(out), as_attachment=True, download_name=f"group_{measure}_average.nii.gz"
+    )
+
+
+@app.route("/download-stats")
+def download_stats():
+    """Recompute a measure and return its t and p maps as NIfTI files (zipped).
+
+    Only available for a single uploaded subject and a reference that supports
+    the t-test (group SD + n > 1).
+    """
+    import zipfile
+
+    import nibabel as nib
+
+    measure = request.args.get("measure", "reho")
+    sid = request.args.get("sid", "subject")
+    cached = request.args.get("cached", "")
+    path = CACHE_DIR / cached
+    if not cached or not path.exists():
+        abort(404)
+
+    ref_path = measure_norm.default_path(measure)
+    if not Path(ref_path).exists():
+        abort(404)
+    ref = measure_norm.load(ref_path)
+    if not measure_norm.can_ttest(ref):
+        abort(400)
+
+    img = io.load_nifti(path)
+    bold = np.asarray(img.get_fdata())
+    params = {
+        "cluster": request.args.get("reho_cluster", 27),
+        "tr": request.args.get("alff_tr", 0.72),
+        "low": request.args.get("alff_low", 0.01),
+        "high": request.args.get("alff_high", 0.08),
+    }
+    try:
+        m, mask = measures.compute(measure, bold, params)
+        t, p, valid, _df = measure_norm.ttest_vs_group(m, mask, ref)
+        q = np.ones_like(p)
+        q[valid], _thr = measure_norm.fdr_correct(p[valid], alpha=0.05)
+    except Exception:
+        abort(400)
+
+    zip_path = CACHE_DIR / f"{sid}_{measure}_stats.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, arr in (("tstat", t), ("pval", p), ("qval_fdr", q)):
+            out = CACHE_DIR / f"{sid}_{measure}_{name}.nii.gz"
+            nib.save(nib.Nifti1Image(arr.astype(np.float32), img.affine), str(out))
+            zf.write(str(out), arcname=f"{sid}_{measure}_{name}.nii.gz")
+    return send_file(
+        str(zip_path), as_attachment=True,
+        download_name=f"{sid}_{measure}_stats.zip",
     )
 
 
@@ -1398,31 +1607,24 @@ def fa_analyze():
 
 @app.route("/demo", methods=["POST"])
 def demo():
-    measure = request.form.get("measure", "reho")
-    bold = _synthetic_bold()
-    dim = bold.shape[0]
-    off = -(dim / 2) * 3.0
-    affine = np.array(
-        [[3, 0, 0, off], [0, 3, 0, off], [0, 0, 3, off], [0, 0, 0, 1]], dtype=float
-    )
-    note = "Synthetic BOLD — demonstrates the layout, not real biology."
-    if measure not in measures.MEASURES:
-        return _page_error(f"unknown demo measure: {measure}")
-    try:
-        m, mask, params, _c, _d = _compute(measure, bold, request.form)
-    except Exception as e:
-        return _page_error(str(e))
-    return _render(
-        "DEMO (synthetic)",
-        measure,
-        m,
-        mask,
-        params,
-        note,
-        affine=affine,
-        mode="demo",
-        form=request.form,
-    )
+    selected = _selected_measures(request.form)
+    if not selected:
+        return _page_error("Select at least one measure.")
+    bold, affine = _synthetic_bold()
+    note = "Synthetic BOLD in an MNI brain mask — demonstrates the layout, not real biology."
+    computed, skipped = [], []
+    for measure in selected:
+        try:
+            m, mask, pstr, _c, _d = _compute(measure, bold, request.form)
+            computed.append((measure, m, mask, affine, pstr))
+        except Exception as e:
+            skipped.append(f"{measure}: {e}")
+    if not computed:
+        return _page_error("No measures computed. " + "; ".join(skipped))
+    if skipped:
+        note += "  Skipped " + "; ".join(skipped)
+    return _render("DEMO (synthetic)", computed, notes=note, mode="demo",
+                   form=request.form)
 
 
 def main():

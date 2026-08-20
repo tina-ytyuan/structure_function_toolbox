@@ -235,8 +235,16 @@ def plot_orientations(
         vmax = float(np.percentile(np.abs(vals), 99)) if vals.size else 1.0
         vmin = -vmax
     else:
-        vmax = float(np.percentile(vals, 99)) if vals.size else 1.0
-        vmin = 0.0
+        # Data-driven range (2nd-98th percentile) so measures whose values
+        # cluster far from 0 (e.g. MSE ~2, INT) still show spatial contrast
+        # instead of washing out to one flat color.
+        if vals.size:
+            vmin = float(np.percentile(vals, 2))
+            vmax = float(np.percentile(vals, 98))
+            if vmax <= vmin:
+                vmax = vmin + 1e-6
+        else:
+            vmin, vmax = 0.0, 1.0
 
     fig = plt.figure(figsize=(13, 9))
     rows = [("z", "axial"), ("y", "coronal"), ("x", "sagittal")]

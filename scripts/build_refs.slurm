@@ -1,14 +1,20 @@
 #!/bin/bash
 # Build normative measure references from HCP data on the DCC.
 #
-# Submit from your toolbox checkout on the cluster, e.g.:
-#     sbatch scripts/build_refs.slurm reho alff falff rsfa
-# (measures default to the core four if none are given). Edit the CONFIG block
-# below to match your paths, and the SBATCH account/partition to your cluster.
+# Build normative measure references (mean + SD + n) from a folder of subjects.
+# The resulting references support the single-subject t-test.
+#
+# Everything is configurable without editing this file: pass the SLURM account
+# and partition on the command line, and the paths as environment variables.
+#
+#   sbatch --account=ACCOUNT --partition=PARTITION \
+#          --export=ALL,PROJECT_DIR=/path/to/project,LIMIT=20 \
+#          scripts/build_refs.slurm reho alff falff rsfa
+#
+# Measures default to the core four if none are given. Override any of
+# PROJECT_DIR, RUN, SUBJECTS_ROOT, OUT_DIR, MASK, PATTERN, TR, LIMIT.
 
 #SBATCH --job-name=sft_refs
-#SBATCH --account=your_account
-#SBATCH --partition=your_partition
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
 #SBATCH --time=12:00:00
@@ -18,17 +24,24 @@
 set -euo pipefail
 mkdir -p slurm_logs
 
-# ---- CONFIG (edit these) --------------------------------------------
-PROJECT_DIR=/path/to/project                  # your project root on the cluster
-RUN=Rest1LR                                   # which HCP run to use
-SUBJECTS_ROOT="$PROJECT_DIR/data/$RUN"        # folder of *_finproc.nii.gz
-OUT_DIR="$PROJECT_DIR/$USER/refs"             # where references are written
-MASK="$PROJECT_DIR/data/final_mask.nii"       # group mask applied to every subject
-PATTERN='*_finproc.nii.gz'
-TR=0.72
-# LIMIT: set to a small number for a quick test, or leave empty for all subjects
-LIMIT=20
+# ---- CONFIG (env-overridable; defaults are placeholders) -------------
+PROJECT_DIR="${PROJECT_DIR:-/path/to/project}"          # project root on the cluster
+RUN="${RUN:-Rest1LR}"                                   # which run to use
+SUBJECTS_ROOT="${SUBJECTS_ROOT:-$PROJECT_DIR/data/$RUN}"  # folder of subject NIfTIs
+OUT_DIR="${OUT_DIR:-$PROJECT_DIR/$USER/refs}"           # where references go
+MASK="${MASK:-$PROJECT_DIR/data/final_mask.nii}"        # mask applied to every subject
+PATTERN="${PATTERN:-*_finproc.nii.gz}"
+TR="${TR:-0.72}"
+# LIMIT: a small number for a quick test; set LIMIT= (empty) for all subjects.
+LIMIT="${LIMIT-20}"
 # ---------------------------------------------------------------------
+
+if [ ! -d "$SUBJECTS_ROOT" ]; then
+    echo "ERROR: SUBJECTS_ROOT does not exist: $SUBJECTS_ROOT" >&2
+    echo "Set PROJECT_DIR (or SUBJECTS_ROOT) via --export, e.g." >&2
+    echo "  sbatch --export=ALL,PROJECT_DIR=/hpc/group/yourproject ..." >&2
+    exit 2
+fi
 
 MEASURES=("$@")
 if [ "${#MEASURES[@]}" -eq 0 ]; then
