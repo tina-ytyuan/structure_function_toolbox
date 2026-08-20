@@ -83,6 +83,10 @@ def main():
         "group_mask": group_mask,
         "summaries": np.array([], dtype=float),   # no per-subject values here
         "n": n,
+        # Provenance: lets the app tell users which mask this reference assumes
+        # and warn when an incoming subject was masked differently.
+        "mask_name": Path(args.mask).name if args.mask else "",
+        "mask_voxels": int(group_mask.sum()),
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     np.savez(args.out, **ref)

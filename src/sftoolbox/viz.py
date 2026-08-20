@@ -246,13 +246,20 @@ def plot_orientations(
         else:
             vmin, vmax = 0.0, 1.0
 
+    # An all-zero background fixes the panel extent to the whole volume. Without
+    # it nilearn sizes each panel to the *data's* bounding box, so a sparse map
+    # (e.g. an FDR result where only a handful of voxels survive) gets blown up
+    # until one voxel fills the frame. The background draws nothing visible, so
+    # the figure stays white.
+    bg = nib.Nifti1Image(np.zeros(img.shape, dtype=np.int16), affine)
+
     fig = plt.figure(figsize=(13, 9))
     rows = [("z", "axial"), ("y", "coronal"), ("x", "sagittal")]
     for i, (mode, label) in enumerate(rows):
         ax = fig.add_subplot(3, 1, i + 1)
         plotting.plot_stat_map(
             img,
-            bg_img=None,
+            bg_img=bg,
             display_mode=mode,
             cut_coords=n_cuts,
             colorbar=True,

@@ -74,6 +74,35 @@ def compare(subject_map: np.ndarray, subject_mask: np.ndarray, ref: dict):
     return z, z_mask, summary, percentile
 
 
+def global_normalize(map_3d: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Scale a map by its own global mean inside the mask (DPABI 'm' convention).
+
+    Measures in raw BOLD units (ALFF, RSFA) carry arbitrary per-subject scaling
+    from scanner gain and intensity normalisation, so the across-subject SD ends
+    up dominated by *global* amplitude differences rather than regional ones.
+    Dividing each subject by its own in-mask mean removes that nuisance scale,
+    which is what mALFF / mReHo do (Zang et al. 2007; Zuo et al. 2010).
+
+    Ratio-valued measures (fALFF, ReHo, MSE) are already largely scale-free, but
+    normalising them is harmless and keeps every reference on one convention.
+    """
+    m = np.asarray(map_3d, float)
+    valid = np.asarray(mask, bool) & np.isfinite(m) & (m != 0)
+    if not valid.any():
+        return m
+    g = float(m[valid].mean())
+    if not np.isfinite(g) or g == 0:
+        return m
+    out = np.zeros_like(m)
+    out[valid] = m[valid] / g
+    return out
+
+
+def is_normalized(ref: dict) -> bool:
+    """True if this reference was built from globally normalised subject maps."""
+    return bool(ref["normalized"]) if "normalized" in ref else False
+
+
 def has_sd(ref: dict) -> bool:
     """True if the reference carries a usable across-subject SD map."""
     if "sd_map" not in ref:
@@ -145,6 +174,12 @@ def ttest_vs_group(subject_map: np.ndarray, subject_mask: np.ndarray, ref: dict)
     group_mask = np.asarray(ref["group_mask"], bool)
     n = int(ref["n"])
     df = n - 1
+
+    # Put the subject on the same scale the cohort was built on. Without this a
+    # subject whose global amplitude differs by a few percent shows a uniform
+    # whole-brain offset that swamps any regional effect.
+    if is_normalized(ref):
+        subject_map = global_normalize(subject_map, subject_mask & group_mask)
 
     valid = group_mask & subject_mask & (sd_map > 0)
     t = np.zeros_like(subject_map, dtype=float)

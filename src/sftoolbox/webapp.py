@@ -102,6 +102,11 @@ STYLE = """
  .params{border-top:1px solid var(--border);margin-top:1.2rem;padding-top:.4rem;}
  .params .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
  .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
+ table.peaks{border-collapse:collapse;margin-top:.8rem;font-size:.9rem;}
+ table.peaks th,table.peaks td{border:1px solid var(--line);padding:.35rem .7rem;
+   text-align:left;}
+ table.peaks th{background:#f2f2ef;font-weight:600;}
+ table.peaks td{font-variant-numeric:tabular-nums;}
  .mcheck{display:flex;gap:1.75rem;flex-wrap:wrap;margin:.4rem 0 .2rem;}
  .mcol{display:flex;flex-direction:column;gap:.15rem;min-width:200px;}
  .mhdr{font-size:.78rem;font-weight:700;text-transform:uppercase;
@@ -265,11 +270,15 @@ machine.</p>
     <input type="text" name="subject_id" value="subject-01">
     <label>Cleaned BOLD &mdash; 4D NIfTI</label>
     <input type="file" name="bold">
-    <label>Mask &mdash; 3D NIfTI (optional)</label>
+    <label>Mask &mdash; 3D NIfTI (optional, recommended)</label>
     <input type="file" name="mask">
-    <p class="phint">If given, the measure is computed only inside this mask
-    (e.g. your group's final_mask.nii) instead of the default finite/nonzero
-    mask. Voxels &ne; 0 are kept.</p>
+    <p class="phint">Restricts the analysis to voxels &ne; 0 in this mask,
+    instead of the default finite/nonzero mask. <b>Use the same mask the
+    reference cohort was built with</b> so the comparison is like-for-like; the
+    results page reports the cohort's mask and flags a mismatch. It changes the
+    reported summary statistics for every measure, and changes the values
+    themselves for neighbourhood measures (ReHo, Coherence-ReHo), whose voxels
+    depend on which neighbours are included.</p>
   </div>
 
   <div class="mgroup" data-mode="folder" id="mode-folder">
@@ -490,6 +499,9 @@ RESULT = (
     {% if b.stats_url %}
     <a class="btn-secondary" data-prepare="1" href="{{ b.stats_url }}">t, p &amp; q maps (.nii.gz)</a>
     {% endif %}
+    {% if b.mask_url %}
+    <a class="btn-secondary" data-prepare="1" href="{{ b.mask_url }}">Cohort mask (.nii.gz)</a>
+    {% endif %}
     <a class="btn-secondary" download="{{ sid }}_{{ b.measure_key }}.png"
        href="data:image/png;base64,{{ b.map_png }}">Measure image (PNG)</a>
   </div>
@@ -521,16 +533,45 @@ RESULT = (
       <div class="stat"><div class="k">p&lt;0.05 uncorrected</div><div class="v">{{ cmp.n_sig }}</div></div>
       <div class="stat"><div class="k">FDR q&lt;0.05</div><div class="v">{{ cmp.n_fdr }}</div></div>
       <div class="stat"><div class="k">% surviving FDR</div><div class="v">{{ cmp.pct_fdr }}</div></div>
+      <div class="stat"><div class="k">SD of t <span title="1.0 = correctly calibrated">(exp. 1.0)</span></div><div class="v">{{ cmp.t_sd }}</div></div>
+      <div class="stat"><div class="k">observed / chance <span title="1.0 = as many p&lt;0.05 voxels as chance predicts">(exp. 1.0)</span></div><div class="v">{{ cmp.obs_exp }}</div></div>
     </div>
     <p class="sub" style="margin-top:1rem;">t map (uncorrected) — red = above the
     group, blue = below.</p>
     <img src="data:image/png;base64,{{ cmp.t_png }}">
+    {% if cmp.calib %}
+    <p class="phint" style="color:var(--err);"><b>Calibration warning:</b> {{ cmp.calib }}</p>
+    {% endif %}
+    {% if cmp.sparse %}
+    <p class="sub" style="margin-top:1rem;">FDR-corrected result (q&lt;0.05). BH
+    threshold on raw p: {{ cmp.p_thr }}. Too few voxels survive to make a useful
+    figure, so they are listed individually:</p>
+    <table class="peaks">
+      <tr><th>MNI (x, y, z)</th><th>t</th><th>q</th><th>direction</th></tr>
+      {% for pk in cmp.peaks %}
+      <tr><td>{{ pk.xyz }}</td><td>{{ pk.t }}</td><td>{{ pk.q }}</td>
+          <td>{{ pk.dir }} the group</td></tr>
+      {% endfor %}
+    </table>
+    <p class="phint">A result this sparse is usually indistinguishable from
+    noise. Check the calibration figures above before interpreting it.</p>
+    {% else %}
     <p class="sub" style="margin-top:1rem;">t map, FDR-corrected (q&lt;0.05;
     non-surviving voxels set to 0). BH threshold on raw p: {{ cmp.p_thr }}.</p>
     <img src="data:image/png;base64,{{ cmp.t_fdr_png }}">
-    <p class="phint">Report the FDR-corrected map. Benjamini-Hochberg controls the
-    expected proportion of false positives across the {{ cmp.n_tested }} tested
-    voxels; the uncorrected map is shown for reference only.</p>
+    {% endif %}
+    <p class="phint">Report the FDR-corrected result. Benjamini-Hochberg controls
+    the expected proportion of false positives across the {{ cmp.n_tested }}
+    tested voxels; the uncorrected map is shown for reference only.
+    Cohort references: {% if cmp.normalized %}globally normalised (DPABI
+    <i>m</i> convention){% else %}<b>raw units, not normalised</b>{% endif %}.</p>
+    {% if cmp.mask_warn %}
+    <p class="phint" style="color:var(--err);"><b>Mask mismatch:</b> {{ cmp.mask_warn }}</p>
+    {% elif cmp.ref_mask_vox %}
+    <p class="phint">Cohort mask{% if cmp.ref_mask_name %}: {{ cmp.ref_mask_name }}{% endif %}
+    ({{ cmp.ref_mask_vox }} voxels) — matches this subject. Download it above to
+    reproduce this analysis over the same voxels.</p>
+    {% endif %}
   {% elif cmp and cmp.mode == 'z' %}
     <h3 class="sh">Comparison to cohort</h3>
     {% if cmp.compare_png %}
@@ -1068,8 +1109,75 @@ def _compare_pngs(measure, map3d, mask, affine):
         q_map = np.ones_like(p)
         q_map[tmask] = q_vals
         t_fdr = np.where(tmask & (q_map < 0.05), t, 0.0)
+        # Mask provenance: warn if this subject was masked differently from the
+        # cohort. Matters most for neighbourhood measures (ReHo, coherence-ReHo),
+        # whose values depend on which neighbours are in the mask.
+        ref_mask_name = str(ref["mask_name"]) if "mask_name" in ref else ""
+        # Fall back to counting group_mask so references built before the
+        # provenance fields existed still get the mismatch check.
+        ref_mask_vox = (int(ref["mask_voxels"]) if "mask_voxels" in ref
+                        else int(np.asarray(ref["group_mask"], bool).sum()))
+        subj_vox = int(mask.sum())
+        mask_warn = ""
+        if ref_mask_vox and subj_vox != ref_mask_vox:
+            nb = measure in ("reho", "coherence_reho")
+            mask_warn = (
+                f"This subject was analysed over {subj_vox:,} voxels but the "
+                f"reference cohort used {ref_mask_vox:,}"
+                + (f" ({ref_mask_name})" if ref_mask_name else "")
+                + ". Only the shared voxels were tested."
+                + (" Because this measure uses each voxel's neighbours, its "
+                   "values also depend on the mask — upload the cohort mask for "
+                   "an exact match." if nb else "")
+            )
+        # When only a handful of voxels survive, a brain figure is nearly blank
+        # and easy to misread as a rendering failure. List the peaks instead.
+        SPARSE_MAX = 20
+        sparse = 0 < n_fdr <= SPARSE_MAX
+        peaks = []
+        if sparse:
+            idx = np.argwhere(tmask & (q_map < 0.05))
+            order = np.argsort(-np.abs(t[tuple(idx.T)]))
+            for vox in idx[order]:
+                mm = affine @ np.array([*vox, 1.0])
+                peaks.append({
+                    "xyz": f"{mm[0]:.0f}, {mm[1]:.0f}, {mm[2]:.0f}",
+                    "t": f"{t[tuple(vox)]:+.2f}",
+                    "q": f"{q_map[tuple(vox)]:.2e}",
+                    "dir": "above" if t[tuple(vox)] > 0 else "below",
+                })
+
+        # Calibration check. Under the null ~5% of voxels land at p<0.05 and the
+        # t values have SD~1. Far fewer, or an SD well under 1, means the group
+        # SD is inflated — typically a raw-unit measure compared without global
+        # normalisation, which shows up as a uniform whole-brain offset.
+        t_sd = float(np.std(tv)) if tv.size else float("nan")
+        obs_exp = (n_sig / (0.05 * tv.size)) if tv.size else float("nan")
+        calib = ""
+        if tv.size and (obs_exp < 0.5 or t_sd < 0.7):
+            calib = (
+                f"Only {n_sig:,} voxels reached p<0.05, versus "
+                f"{int(0.05 * tv.size):,} expected by chance alone, and the t "
+                f"values have SD {t_sd:.2f} where 1.0 is correctly calibrated. "
+                "This points to an inflated cohort SD rather than a real result."
+                + ("" if measure_norm.is_normalized(ref) else
+                   " This reference was built from raw, un-normalised maps; for "
+                   "amplitude measures (ALFF, RSFA) that lets between-subject "
+                   "scanner scaling dominate the SD. Rebuild it with "
+                   "scripts/reference_from_subject_maps.py.")
+            )
+
         out = {
             "mode": "t", "n": n, "df": df, "note": "",
+            "normalized": measure_norm.is_normalized(ref),
+            "t_sd": f"{t_sd:.2f}" if tv.size else "n/a",
+            "obs_exp": f"{obs_exp:.2f}" if tv.size else "n/a",
+            "calib": calib,
+            "sparse": sparse,
+            "peaks": peaks,
+            "ref_mask_name": ref_mask_name,
+            "ref_mask_vox": f"{ref_mask_vox:,}" if ref_mask_vox else "",
+            "mask_warn": mask_warn,
             "t_mean": f"{np.mean(tv):+.3f}" if tv.size else "n/a",
             "t_absmax": f"{np.max(np.abs(tv)):.2f}" if tv.size else "n/a",
             "n_tested": f"{int(tmask.sum()):,}",
@@ -1122,7 +1230,8 @@ def _compare_pngs(measure, map3d, mask, affine):
 
 
 def _measure_block(measure, map3d, mask, affine, params_str, exclude_zero,
-                   download_url=None, compare=True, stats_url=None):
+                   download_url=None, compare=True, stats_url=None,
+                   mask_url=None):
     """Build one measure's result-card dict for the RESULT template."""
     mean, median, nvox = _stats(map3d, mask)
     cmp = _compare_pngs(measure, map3d, mask, affine) if compare else None
@@ -1136,6 +1245,9 @@ def _measure_block(measure, map3d, mask, affine, params_str, exclude_zero,
         "download_url": download_url,
         # t/p NIfTI export is only meaningful when the t-test actually ran.
         "stats_url": stats_url if (cmp and cmp.get("mode") == "t") else None,
+        # The cohort mask is offered whenever a comparison ran, so users can
+        # reproduce the analysis over exactly the voxels that were tested.
+        "mask_url": mask_url if cmp else None,
         "cmp": cmp,
     }
 
@@ -1150,13 +1262,14 @@ def _render(sid, computed, notes, mode="single", folder=None, cached=None,
     blocks = []
     for measure, map3d, mask, affine, pstr in computed:
         dl = _download_url(measure, mode, sid, cached=cached, folder=folder, form=form)
-        st = None
+        st = mk = None
         if mode == "single" and cached:
             st = "/download-stats?" + urlencode(
                 dict(_param_args(form), measure=measure, sid=sid, cached=cached))
+            mk = "/download-mask?" + urlencode(dict(measure=measure, cached=cached))
         blocks.append(_measure_block(measure, map3d, mask, affine, pstr,
                                      exclude_zero, download_url=dl, compare=True,
-                                     stats_url=st))
+                                     stats_url=st, mask_url=mk))
     selected = [c[0] for c in computed]
     controls = _controls_html(mode, selected, folder=folder, cached=cached,
                               form=form, sid=sid, cached_mask=cached_mask)
@@ -1518,9 +1631,97 @@ def download_stats():
             out = CACHE_DIR / f"{sid}_{measure}_{name}.nii.gz"
             nib.save(nib.Nifti1Image(arr.astype(np.float32), img.affine), str(out))
             zf.write(str(out), arcname=f"{sid}_{measure}_{name}.nii.gz")
+        # Ship the cohort mask alongside: it defines which voxels were tested,
+        # so results are not reproducible without it.
+        gm = np.asarray(ref["group_mask"], bool)
+        mout = CACHE_DIR / f"{measure}_cohort_mask.nii.gz"
+        nib.save(nib.Nifti1Image(gm.astype(np.uint8), img.affine), str(mout))
+        zf.write(str(mout), arcname="cohort_mask.nii.gz")
+        zf.writestr("README.txt", _stats_readme(measure, ref, sid))
     return _as_download(send_file(
         str(zip_path), as_attachment=True,
         download_name=f"{sid}_{measure}_stats.zip",
+    ))
+
+
+def _stats_readme(measure: str, ref: dict, sid: str) -> str:
+    """Plain-text provenance shipped inside the stats download."""
+    label = measures.MEASURES.get(measure, {}).get("label", measure)
+    n = int(ref["n"])
+    mname = str(ref["mask_name"]) if "mask_name" in ref else ""
+    return f"""Structure-Function Toolbox - single-subject statistics
+=======================================================
+Subject   : {sid}
+Measure   : {label} ({measure})
+Cohort    : n = {n} subjects, df = {n - 1}
+Mask      : cohort_mask.nii.gz{f"  (built from {mname})" if mname else ""}
+            {int(np.asarray(ref["group_mask"], bool).sum()):,} voxels
+
+Files
+-----
+{sid}_{measure}_tstat.nii.gz     t statistic, per voxel
+{sid}_{measure}_pval.nii.gz      two-tailed p, UNCORRECTED
+{sid}_{measure}_qval_fdr.nii.gz  Benjamini-Hochberg FDR-adjusted p (q)
+cohort_mask.nii.gz               voxels the test was run in (1 = tested)
+
+Method
+------
+Crawford & Howell (1998) single-case t-test against the cohort:
+
+    t = (subject - group_mean) / (group_SD * sqrt((n + 1) / n)),  df = n - 1
+
+This treats the cohort as a finite sample rather than a known population, so
+it is appropriate for comparing ONE subject to a normative group.
+
+Reading the maps
+----------------
+Report the FDR map. Threshold qval_fdr at 0.05; the uncorrected p map is
+provided for reference only and will contain many false positives at ~10^5
+voxels. Values outside cohort_mask.nii.gz are not meaningful (t = 0, p = 1).
+
+About the mask
+--------------
+The cohort mask is applied automatically, so the t-test is always confined to
+these voxels. Supplying the same mask when you compute the measure is still
+recommended: it keeps the reported summary statistics comparable, and for the
+neighbourhood measures (ReHo, Coherence-ReHo) it changes the values themselves,
+because those depend on which neighbouring voxels are included.
+"""
+
+
+@app.route("/download-mask")
+def download_mask():
+    """Return the cohort mask a reference was built with, as a NIfTI.
+
+    The mask lives inside the reference, so this always matches the cohort the
+    subject is being compared against — no separate file to keep in sync.
+    """
+    import nibabel as nib
+
+    measure = request.args.get("measure", "reho")
+    ref_path = measure_norm.default_path(measure)
+    if not Path(ref_path).exists():
+        abort(404)
+    ref = measure_norm.load(ref_path)
+    gm = np.asarray(ref["group_mask"], bool)
+
+    # Prefer the subject's affine (same grid); else the standard MNI152 2mm one.
+    affine = None
+    cached = request.args.get("cached", "")
+    if cached and (CACHE_DIR / cached).exists():
+        try:
+            affine = io.load_nifti(CACHE_DIR / cached).affine
+        except Exception:
+            affine = None
+    if affine is None:
+        affine = np.array([[-2., 0., 0., 90.], [0., 2., 0., -126.],
+                           [0., 0., 2., -72.], [0., 0., 0., 1.]])
+
+    out = CACHE_DIR / f"{measure}_cohort_mask.nii.gz"
+    nib.save(nib.Nifti1Image(gm.astype(np.uint8), affine), str(out))
+    return _as_download(send_file(
+        str(out), as_attachment=True,
+        download_name=f"{measure}_cohort_mask.nii.gz",
     ))
 
 
