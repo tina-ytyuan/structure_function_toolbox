@@ -49,15 +49,44 @@ def main():
     ap.add_argument("--mask", help="Mask NIfTI defining the analysis voxels")
     ap.add_argument("--no-normalize", action="store_true",
                     help="Skip global normalisation (raw units; not recommended)")
+    ap.add_argument("--subjects",
+                    help="Text file of subject IDs (one per line) to restrict "
+                         "to. Use this to reproduce a specific cohort rather "
+                         "than whatever happens to be on disk.")
     ap.add_argument("--limit", type=int, default=0, help="Use only the first N maps")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
     paths = sorted(glob.glob(args.maps))
-    if args.limit:
-        paths = paths[: args.limit]
     if not paths:
         raise SystemExit(f"No maps matched: {args.maps}")
+
+    wanted = None
+    if args.subjects:
+        wanted = {
+            ln.strip() for ln in Path(args.subjects).read_text().splitlines()
+            if ln.strip() and not ln.startswith("#")
+        }
+        # Match a subject ID appearing anywhere in the path (…/100206/… or
+        # …/100206_finproc_LR_rsfa.nii.gz), so this works across layouts.
+        kept, seen = [], set()
+        for p in paths:
+            hit = next((s for s in wanted if s in p), None)
+            if hit is not None:
+                kept.append(p)
+                seen.add(hit)
+        missing = sorted(wanted - seen)
+        print(f"cohort list: {len(wanted)} subjects | matched {len(seen)} | "
+              f"maps {len(kept)} of {len(paths)} on disk")
+        if missing:
+            print(f"  WARNING: {len(missing)} listed subjects have no map, e.g. "
+                  f"{', '.join(missing[:5])}")
+        paths = kept
+        if not paths:
+            raise SystemExit("No maps matched the subject list")
+
+    if args.limit:
+        paths = paths[: args.limit]
     normalize = not args.no_normalize
     print(f"{len(paths)} subject maps | normalise: {normalize}")
 
@@ -127,6 +156,10 @@ def main():
         "normalized": bool(normalize),
         "mask_name": Path(args.mask).name if args.mask else "",
         "mask_voxels": int(group_mask.sum()),
+        # Record exactly which subjects went in, so the cohort behind a
+        # reference is always recoverable from the file itself.
+        "subject_ids": np.array([Path(p).parent.name for p in paths]),
+        "subjects_file": Path(args.subjects).name if args.subjects else "",
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     np.savez(args.out, **ref)
