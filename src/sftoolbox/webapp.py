@@ -473,7 +473,7 @@ RESULT = (
     """
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Results — {{ sid }}</title>
+<title>Results: {{ sid }}</title>
 """
     + STYLE
     + """
@@ -536,7 +536,7 @@ RESULT = (
       <div class="stat"><div class="k">SD of t <span title="1.0 = correctly calibrated">(exp. 1.0)</span></div><div class="v">{{ cmp.t_sd }}</div></div>
       <div class="stat"><div class="k">observed / chance <span title="1.0 = as many p&lt;0.05 voxels as chance predicts">(exp. 1.0)</span></div><div class="v">{{ cmp.obs_exp }}</div></div>
     </div>
-    <p class="sub" style="margin-top:1rem;">t map (uncorrected) — red = above the
+    <p class="sub" style="margin-top:1rem;">t map (uncorrected). Red = above the
     group, blue = below.</p>
     <img src="data:image/png;base64,{{ cmp.t_png }}">
     {% if cmp.calib %}
@@ -569,7 +569,7 @@ RESULT = (
     <p class="phint" style="color:var(--err);"><b>Mask mismatch:</b> {{ cmp.mask_warn }}</p>
     {% elif cmp.ref_mask_vox %}
     <p class="phint">Cohort mask{% if cmp.ref_mask_name %}: {{ cmp.ref_mask_name }}{% endif %}
-    ({{ cmp.ref_mask_vox }} voxels) — matches this subject. Download it above to
+    ({{ cmp.ref_mask_vox }} voxels), matching this subject. Download it above to
     reproduce this analysis over the same voxels.</p>
     {% endif %}
   {% elif cmp and cmp.mode == 'z' %}
@@ -726,7 +726,7 @@ FA_RESULT = (
     """
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FA — {{ sid }}</title>
+<title>FA: {{ sid }}</title>
 """
     + STYLE
     + """
@@ -1016,7 +1016,7 @@ def _slices_png(map3d, affine, measure, symmetric=False, cmap=None, title=None):
     # Title every figure with the measure and what the values are, so a
     # downloaded PNG is interpretable without the surrounding page.
     if title is None:
-        title = f"{_measure_label(measure)} — value per voxel"
+        title = f"{_measure_label(measure)}: value per voxel"
     return _fig_to_b64(
         viz.plot_orientations(map3d, affine, cmap=cmap, symmetric=symmetric,
                               title=title)
@@ -1139,7 +1139,7 @@ def _compare_pngs(measure, map3d, mask, affine):
                 + (f" ({ref_mask_name})" if ref_mask_name else "")
                 + ". Only the shared voxels were tested."
                 + (" Because this measure uses each voxel's neighbours, its "
-                   "values also depend on the mask — upload the cohort mask for "
+                   "values also depend on the mask; upload the cohort mask for "
                    "an exact match." if nb else "")
             )
         # When only a handful of voxels survive, a brain figure is nearly blank
@@ -1200,11 +1200,11 @@ def _compare_pngs(measure, map3d, mask, affine):
             "p_thr": f"{p_thr:.2e}" if p_thr > 0 else "none survive",
             "t_png": _slices_png(
                 t, affine, measure, symmetric=True, cmap="RdBu_r",
-                title=f"{_measure_label(measure)} — t vs {n} HCP subjects "
+                title=f"{_measure_label(measure)}: t vs {n} HCP subjects "
                       f"(uncorrected; red = above group, blue = below)"),
             "t_fdr_png": _slices_png(
                 t_fdr, affine, measure, symmetric=True, cmap="RdBu_r",
-                title=f"{_measure_label(measure)} — t vs {n} HCP subjects "
+                title=f"{_measure_label(measure)}: t vs {n} HCP subjects "
                       f"(FDR q<0.05; {n_fdr:,} of {int(tmask.sum()):,} voxels survive)"),
             "map_png": None,
         }
