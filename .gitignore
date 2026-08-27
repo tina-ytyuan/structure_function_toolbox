@@ -38,3 +38,6 @@ _dcc_compare/
 /the/
 /recreate/
 /environment/
+
+# Local agent instructions (contains internal cluster paths)
+CLAUDE.md
