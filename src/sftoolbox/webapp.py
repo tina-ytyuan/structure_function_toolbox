@@ -539,6 +539,9 @@ RESULT = (
     <p class="sub" style="margin-top:1rem;">t map (uncorrected). Red = above the
     group, blue = below.</p>
     <img src="data:image/png;base64,{{ cmp.t_png }}">
+    {% if cmp.resampled %}
+    <p class="phint"><b>Resampled:</b> {{ cmp.resampled }}</p>
+    {% endif %}
     {% if cmp.calib %}
     <p class="phint" style="color:var(--err);"><b>Calibration warning:</b> {{ cmp.calib }}</p>
     {% endif %}
@@ -1105,6 +1108,33 @@ def _compare_pngs(measure, map3d, mask, affine):
 
     n = int(ref["n"]) if "n" in ref else 0
 
+    # Standard space is not one grid: a subject can be perfectly good MNI data
+    # at a different resolution. Resample the measure map onto the reference
+    # grid rather than refusing the comparison.
+    resampled = ""
+    if affine is not None and measure_norm.needs_resampling(map3d, ref):
+        src_shape = map3d.shape
+        try:
+            map3d, mask = measure_norm.resample_to_reference(
+                map3d, mask, affine, ref)
+            affine = measure_norm.reference_affine(ref)
+            resampled = (
+                f"Subject was on a {src_shape[0]}x{src_shape[1]}x{src_shape[2]} "
+                f"grid and has been resampled to the cohort's "
+                f"{'x'.join(str(int(s)) for s in ref['shape'])} grid for "
+                "comparison. The measure itself was computed on the original "
+                "grid."
+            )
+            if measure in ("reho", "coherence_reho"):
+                resampled += (
+                    " This measure summarises each voxel's neighbours, so its "
+                    "values depend on voxel size; treat this comparison as "
+                    "approximate."
+                )
+        except Exception as e:
+            return {"mode": "error",
+                    "note": f"Could not resample subject to the cohort grid: {e}"}
+
     # t-test path: one subject vs the group (needs SD and n > 1).
     if measure_norm.can_ttest(ref):
         try:
@@ -1185,6 +1215,7 @@ def _compare_pngs(measure, map3d, mask, affine):
             "t_sd": f"{t_sd:.2f}" if tv.size else "n/a",
             "obs_exp": f"{obs_exp:.2f}" if tv.size else "n/a",
             "calib": calib,
+            "resampled": resampled,
             "sparse": sparse,
             "peaks": peaks,
             "ref_mask_name": ref_mask_name,

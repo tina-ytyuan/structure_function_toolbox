@@ -103,6 +103,64 @@ def is_normalized(ref: dict) -> bool:
     return bool(ref["normalized"]) if "normalized" in ref else False
 
 
+# Standard MNI152 2 mm affine for the 91x109x91 grid the references use. Older
+# references predate storing an affine, so fall back to this.
+MNI2MM_AFFINE = np.array([
+    [-2.0, 0.0, 0.0, 90.0],
+    [0.0, 2.0, 0.0, -126.0],
+    [0.0, 0.0, 2.0, -72.0],
+    [0.0, 0.0, 0.0, 1.0],
+])
+
+
+def reference_affine(ref: dict) -> np.ndarray:
+    """Voxel-to-world affine a reference is defined on."""
+    if "affine" in ref:
+        return np.asarray(ref["affine"], float)
+    return MNI2MM_AFFINE.copy()
+
+
+def needs_resampling(subject_map: np.ndarray, ref: dict) -> bool:
+    return tuple(int(s) for s in ref["shape"]) != tuple(subject_map.shape)
+
+
+def resample_to_reference(subject_map, subject_mask, affine, ref):
+    """Put a subject's measure map onto the reference's voxel grid.
+
+    Voxelwise comparison needs both on the same grid. Requiring users to
+    pre-resample to exactly 91x109x91 is a needless barrier: "my data is in
+    MNI" is not the same as "my data is on this MNI grid". Resampling the
+    *measure map* (3D) rather than the BOLD (4D) is both far cheaper and more
+    correct, since it leaves the time series untouched.
+
+    Returns (map_on_ref_grid, mask_on_ref_grid). The map is interpolated
+    continuously and the mask by nearest neighbour, so the mask stays binary.
+
+    Caveat for neighbourhood measures (ReHo, coherence-ReHo): their values
+    depend on voxel size, because they summarise a fixed number of neighbouring
+    voxels. A map computed at 3 mm and resampled to 2 mm is not identical to
+    one computed at 2 mm, so comparisons for those measures are approximate
+    when the native resolution differs from the cohort's.
+    """
+    import nibabel as nib
+    from nilearn import image as nimage
+
+    shape = tuple(int(s) for s in ref["shape"])
+    target_affine = reference_affine(ref)
+    target = nib.Nifti1Image(np.zeros(shape, dtype=np.float32), target_affine)
+
+    m_img = nib.Nifti1Image(np.asarray(subject_map, np.float32), affine)
+    k_img = nib.Nifti1Image(np.asarray(subject_mask, np.uint8), affine)
+    m_r = nimage.resample_to_img(m_img, target, interpolation="continuous",
+                                 force_resample=True, copy_header=True)
+    k_r = nimage.resample_to_img(k_img, target, interpolation="nearest",
+                                 force_resample=True, copy_header=True)
+    out_map = np.asarray(m_r.get_fdata(), float)
+    out_mask = np.asarray(k_r.get_fdata()) > 0
+    out_map = np.where(np.isfinite(out_map), out_map, 0.0)
+    return out_map, out_mask & (out_map != 0)
+
+
 def has_sd(ref: dict) -> bool:
     """True if the reference carries a usable across-subject SD map."""
     if "sd_map" not in ref:

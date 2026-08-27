@@ -97,6 +97,10 @@ def main():
     normalize = not args.no_normalize
     print(f"{len(paths)} subject maps | normalise: {normalize}")
 
+    # Record the grid the reference lives on, so a subject on a different
+    # MNI grid can be resampled onto it instead of being rejected.
+    ref_affine = np.asarray(io.load_nifti(paths[0]).affine, float)
+
     mask = None
     if args.mask:
         mask = np.asarray(io.load_nifti_data(args.mask)) != 0
@@ -206,6 +210,7 @@ def main():
         "group_mask": group_mask,
         "summaries": np.array([], dtype=float),
         "n": n,
+        "affine": ref_affine,
         "normalized": bool(normalize),
         "mask_name": Path(args.mask).name if args.mask else "",
         "mask_voxels": int(group_mask.sum()),
