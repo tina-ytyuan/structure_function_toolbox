@@ -292,7 +292,7 @@ def plot_orientations(
 
 
 def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None,
-                    exclude_zero: bool = True, out_path=None):
+                    exclude_zero: bool = True, out_path=None, label: str = ""):
     """Small histogram of in-mask values, shown alongside the slice panels.
 
     ``exclude_zero`` (default True) drops voxels that are exactly 0 — these are
@@ -310,11 +310,15 @@ def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None,
     n_zero = n_total - vals.size
     fig, ax = plt.subplots(figsize=(7, 2.6))
     ax.hist(vals, bins=40, color="#c9c9c3", edgecolor="#8a8a84")
-    subtitle = "value distribution (in mask"
-    subtitle += f", {n_zero:,} zeros excluded)" if exclude_zero and n_zero else ")"
-    ax.set_title(subtitle, fontsize=10)
-    ax.set_xlabel("value")
-    ax.set_ylabel("voxels")
+    # Say what is being counted, over how many voxels, and what was left out,
+    # so the figure stands on its own outside the page.
+    head = f"{label}: " if label else ""
+    title = f"{head}distribution of values across {vals.size:,} brain voxels"
+    if exclude_zero and n_zero:
+        title += f"  ({n_zero:,} zero-valued voxels excluded)"
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel(f"{label} value" if label else "value")
+    ax.set_ylabel("number of voxels")
     fig.tight_layout()
     return _save(fig, out_path)
 

@@ -1007,10 +1007,19 @@ def _controls_html(mode, selected, folder=None, cached=None, form=None, sid=None
 </form>'''
 
 
-def _slices_png(map3d, affine, measure, symmetric=False, cmap=None):
+def _measure_label(measure):
+    return measures.MEASURES.get(measure, {}).get("label", measure)
+
+
+def _slices_png(map3d, affine, measure, symmetric=False, cmap=None, title=None):
     cmap = cmap or viz._MEASURE_CMAP.get(measure, "cold_hot")
+    # Title every figure with the measure and what the values are, so a
+    # downloaded PNG is interpretable without the surrounding page.
+    if title is None:
+        title = f"{_measure_label(measure)} — value per voxel"
     return _fig_to_b64(
-        viz.plot_orientations(map3d, affine, cmap=cmap, symmetric=symmetric)
+        viz.plot_orientations(map3d, affine, cmap=cmap, symmetric=symmetric,
+                              title=title)
     )
 
 
@@ -1024,8 +1033,11 @@ def _as_download(resp):
     resp.set_cookie("sft_dl", "1", max_age=60, path="/")
     return resp
 
-def _hist_png(map3d, mask, exclude_zero=True):
-    return _fig_to_b64(viz.plot_value_hist(map3d, mask, exclude_zero=exclude_zero))
+def _hist_png(map3d, mask, exclude_zero=True, measure=None):
+    label = _measure_label(measure) if measure else ""
+    return _fig_to_b64(
+        viz.plot_value_hist(map3d, mask, exclude_zero=exclude_zero, label=label)
+    )
 
 
 def _group_average(results):
@@ -1186,9 +1198,14 @@ def _compare_pngs(measure, map3d, mask, affine):
             "n_fdr": f"{n_fdr:,}",
             "pct_fdr": f"{100.0 * n_fdr / tv.size:.1f}%" if tv.size else "n/a",
             "p_thr": f"{p_thr:.2e}" if p_thr > 0 else "none survive",
-            "t_png": _slices_png(t, affine, measure, symmetric=True, cmap="RdBu_r"),
-            "t_fdr_png": _slices_png(t_fdr, affine, measure, symmetric=True,
-                                     cmap="RdBu_r"),
+            "t_png": _slices_png(
+                t, affine, measure, symmetric=True, cmap="RdBu_r",
+                title=f"{_measure_label(measure)} — t vs {n} HCP subjects "
+                      f"(uncorrected; red = above group, blue = below)"),
+            "t_fdr_png": _slices_png(
+                t_fdr, affine, measure, symmetric=True, cmap="RdBu_r",
+                title=f"{_measure_label(measure)} — t vs {n} HCP subjects "
+                      f"(FDR q<0.05; {n_fdr:,} of {int(tmask.sum()):,} voxels survive)"),
             "map_png": None,
         }
         return out
@@ -1240,7 +1257,8 @@ def _measure_block(measure, map3d, mask, affine, params_str, exclude_zero,
         "measure_label": measures.MEASURES.get(measure, {}).get("label", measure),
         "params": params_str,
         "map_png": _slices_png(map3d, affine, measure),
-        "hist_png": _hist_png(map3d, mask, exclude_zero=exclude_zero),
+        "hist_png": _hist_png(map3d, mask, exclude_zero=exclude_zero,
+                              measure=measure),
         "mean": mean, "median": median, "nvox": nvox,
         "download_url": download_url,
         # t/p NIfTI export is only meaningful when the t-test actually ran.
