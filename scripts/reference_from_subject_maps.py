@@ -53,6 +53,13 @@ def main():
                     help="Text file of subject IDs (one per line) to restrict "
                          "to. Use this to reproduce a specific cohort rather "
                          "than whatever happens to be on disk.")
+    ap.add_argument("--runs", choices=("separate", "average"), default="separate",
+                    help="How to treat multiple runs per subject. 'separate' "
+                         "(default) aggregates every run, so the SD describes "
+                         "how much a SINGLE run varies across the population — "
+                         "which is what a user uploads. 'average' averages a "
+                         "subject's runs first, describing a quieter quantity "
+                         "and over-declaring significance against single runs.")
     ap.add_argument("--limit", type=int, default=0, help="Use only the first N maps")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -95,31 +102,72 @@ def main():
         mask = np.asarray(io.load_nifti_data(args.mask)) != 0
         print(f"mask voxels: {int(mask.sum()):,}")
 
+    # Group maps by subject so runs can be handled deliberately. The reference
+    # must describe the same quantity the subject supplies: users upload ONE
+    # run, so the SD should be single-run variability. Averaging a subject's
+    # runs first describes a quieter quantity and makes ordinary subjects look
+    # abnormal — measured at SD(t) 1.31 and 1.88x chance on HCP RSFA.
+    by_subject: dict[str, list[str]] = {}
+    for p in paths:
+        by_subject.setdefault(Path(p).parent.name, []).append(p)
+    subjects = sorted(by_subject)
+    runs_each = [len(v) for v in by_subject.values()]
+    multi_run = bool(runs_each) and max(runs_each) > 1
+
+    if args.runs == "average":
+        groups = [by_subject[s] for s in subjects]
+        if multi_run:
+            print(f"grouping {len(paths)} maps into {len(subjects)} subjects "
+                  f"({min(runs_each)}-{max(runs_each)} runs each); runs averaged "
+                  f"within subject")
+    else:
+        # One group per map: every run is its own observation, so the SD
+        # describes single-run variability — the same quantity a user's single
+        # uploaded run represents. n is still reported as the number of people,
+        # keeping the t-test's df conservative rather than counting each run as
+        # an independent subject.
+        groups = [[p] for s in subjects for p in by_subject[s]]
+        if multi_run:
+            print(f"using {len(paths)} maps from {len(subjects)} subjects "
+                  f"({min(runs_each)}-{max(runs_each)} runs each) as separate "
+                  f"observations; SD describes single-run variability")
+
     # Welford's online algorithm: one pass, constant memory. Stacking 936
     # volumes would need ~7 GB; this needs three arrays.
     count = mean = m2 = None
     used = 0
-    for i, p in enumerate(paths, 1):
-        try:
-            arr = np.asarray(io.load_nifti_data(p), dtype=float)
-        except Exception as e:
-            print(f"  skip {Path(p).name}: {e}")
+    for i, group in enumerate(groups, 1):
+        # Each group is one observation: a single map, or a subject's runs
+        # averaged. Runs are normalised individually first, so a run with
+        # different global scaling cannot dominate.
+        acc = None
+        acc_n = 0
+        for p in group:
+            try:
+                arr = np.asarray(io.load_nifti_data(p), dtype=float)
+            except Exception as e:
+                print(f"  skip {Path(p).name}: {e}")
+                continue
+            if mean is None and acc is None:
+                shape = arr.shape
+                count = np.zeros(shape, dtype=np.int32)
+                mean = np.zeros(shape, dtype=float)
+                m2 = np.zeros(shape, dtype=float)
+                if mask is None:
+                    mask = np.ones(shape, dtype=bool)
+                elif mask.shape != shape:
+                    raise SystemExit(f"mask {mask.shape} != map {shape}")
+            elif arr.shape != (mean.shape if mean is not None else arr.shape):
+                print(f"  skip {Path(p).name}: shape {arr.shape} != {mean.shape}")
+                continue
+            if normalize:
+                arr = measure_norm.global_normalize(arr, mask)
+            arr = np.where(np.isfinite(arr), arr, 0.0)
+            acc = arr if acc is None else acc + arr
+            acc_n += 1
+        if acc is None or acc_n == 0:
             continue
-        if mean is None:
-            shape = arr.shape
-            count = np.zeros(shape, dtype=np.int32)
-            mean = np.zeros(shape, dtype=float)
-            m2 = np.zeros(shape, dtype=float)
-            if mask is None:
-                mask = np.ones(shape, dtype=bool)
-            elif mask.shape != shape:
-                raise SystemExit(f"mask {mask.shape} != map {shape}")
-        elif arr.shape != mean.shape:
-            print(f"  skip {Path(p).name}: shape {arr.shape} != {mean.shape}")
-            continue
-
-        if normalize:
-            arr = measure_norm.global_normalize(arr, mask)
+        arr = acc / acc_n
 
         # A voxel contributes only where this subject actually has a value.
         v = mask & np.isfinite(arr) & (arr != 0)
@@ -129,11 +177,11 @@ def main():
         mean[v] += delta[v] / count[v]
         m2[v] += delta[v] * (arr[v] - mean[v])
         used += 1
-        if i % 50 == 0 or i == len(paths):
-            print(f"  {i}/{len(paths)} processed", flush=True)
+        if i % 50 == 0 or i == len(groups):
+            print(f"  {i}/{len(groups)} observations processed", flush=True)
 
     if used < 2:
-        raise SystemExit(f"Need >=2 usable maps; got {used}")
+        raise SystemExit(f"Need >=2 usable subjects; got {used}")
 
     # Sample SD (ddof=1), only where enough subjects contributed.
     enough = count >= 2
@@ -143,7 +191,12 @@ def main():
     group_mask = mask & enough & np.isfinite(mean) & np.isfinite(sd) & (sd > 0)
     mean = np.nan_to_num(mean, nan=0.0)
     sd = np.nan_to_num(sd, nan=0.0)
-    n = int(np.median(count[group_mask])) if group_mask.any() else used
+    # df for the single-subject t-test comes from the number of independent
+    # PEOPLE, not the number of maps. With runs kept separate, count reflects
+    # ~4 maps per person, so use the subject total instead — the SD benefits
+    # from every run while the df stays honest.
+    n_obs = int(np.median(count[group_mask])) if group_mask.any() else used
+    n = len(subjects) if args.runs == "separate" else n_obs
 
     ref = {
         "measure": args.measure,
@@ -158,7 +211,8 @@ def main():
         "mask_voxels": int(group_mask.sum()),
         # Record exactly which subjects went in, so the cohort behind a
         # reference is always recoverable from the file itself.
-        "subject_ids": np.array([Path(p).parent.name for p in paths]),
+        "subject_ids": np.array(subjects),
+        "runs_per_subject": int(np.median(runs_each)) if runs_each else 1,
         "subjects_file": Path(args.subjects).name if args.subjects else "",
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

@@ -129,6 +129,13 @@ def main():
     elif sd_med > 1.4:
         print("VERDICT: NOT calibrated - SD(t) well above 1; cohort SD too "
               "small, so significance will be over-declared.")
+    elif oe_med > 1.5:
+        print(f"VERDICT: NOT calibrated - {oe_med:.2f}x as many p<0.05 voxels as "
+              "chance, so the test over-declares significance.")
+        print("  If the reference averaged each subject's runs while test")
+        print("  subjects supply a single run, it describes a quieter quantity")
+        print("  than what it is compared against. Rebuild with")
+        print("  --runs separate so the SD reflects single-run variability.")
     elif oe_med < 0.5:
         print("VERDICT: conservative - fewer p<0.05 voxels than chance despite "
               "reasonable SD(t). Inspect the mask and cohort composition.")
