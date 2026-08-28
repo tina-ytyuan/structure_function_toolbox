@@ -192,8 +192,32 @@ python scripts/reference_from_subject_maps.py --measure rsfa \
 
 `--subjects` pins the cohort so a reference is reproducible rather than
 depending on whatever is on disk. `--runs average` reverts to run-averaging if
-your subjects supply multi-run averages too. Voxelwise comparison needs the
-subject and cohort on a common grid; the summary percentile works regardless.
+your subjects supply multi-run averages too.
+
+Subjects do not need to be on the reference's exact voxel grid. Standard space
+is not a single grid, so a map on a different MNI resolution is resampled onto
+the cohort grid automatically and the results page says so. Only the measure
+map is resampled, never the BOLD, which leaves the time series untouched. For
+ReHo and coherence-ReHo the comparison is approximate when resolutions differ,
+since those summarise a fixed neighbourhood and so depend on voxel size.
+
+### Publishing a reference
+
+Almost everything in a reference is aggregate. Two fields are not:
+`subject_ids` records cohort membership and `summaries` holds one value per
+subject when populated. Strip them before distribution:
+
+```bash
+python scripts/strip_reference_ids.py --refs 'outputs/measure_ref_*.npz' \
+    --out-dir outputs/publish
+python scripts/strip_reference_ids.py --verify outputs/publish
+```
+
+The maps are unchanged and the copies work identically; membership is only
+needed to rebuild a byte-identical reference, not to use one. This matters
+because HCP places family structure behind Restricted Access, so a membership
+list combined with a relatedness-based selection criterion could say something
+about the subjects who were left out.
 
 ## Test data
 

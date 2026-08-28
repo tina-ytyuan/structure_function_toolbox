@@ -20,8 +20,12 @@ from the Human Connectome Project Young Adult cohort (n = 936)
 Eleven normative reference files supporting single-subject comparison of
 resting-state fMRI measures. Each file records, at every voxel, the mean and
 standard deviation of one measure across a cohort of 936 Human Connectome
-Project Young Adult subjects, together with the analysis mask, the cohort size,
-and the identifiers of the contributing subjects.
+Project Young Adult subjects, together with the analysis mask and the cohort
+size.
+
+Only aggregate quantities are included. The files carry no per-subject values
+and no list of which subjects contributed, so no individual is identifiable and
+no inference can be drawn about who was or was not in the cohort.
 
 These references let a single individual's measure map be compared against a
 normative distribution without the user assembling a control cohort of their
@@ -62,10 +66,26 @@ structure-function coupling
 
 ## Files
 
-`measure_ref_<measure>.npz`, eleven files, ~161 MB total. NumPy `.npz`
-containing `mean_map`, `sd_map`, `group_mask`, `shape`, `n`, `normalized`,
-`subject_ids`, `mask_name`, and `mask_voxels`. Load with
-`numpy.load(path, allow_pickle=True)` or `sftoolbox.measure_norm.load`.
+`measure_ref_<measure>.npz`, eleven files, ~162 MB total. NumPy `.npz`
+containing:
+
+| field | contents |
+|---|---|
+| `mean_map` | voxelwise cohort mean, 91 × 109 × 91 |
+| `sd_map` | voxelwise cohort SD, N−1 denominator |
+| `group_mask` | analysis mask, 226,304 voxels |
+| `shape` | voxel grid dimensions |
+| `n` | 936, the number of contributing individuals |
+| `normalized` | True; maps were globally normalised before aggregation |
+| `mask_name` | name of the source mask |
+| `mask_voxels` | 226,304 |
+| `runs_per_subject` | 4 |
+
+Load with `numpy.load(path, allow_pickle=True)` or
+`sftoolbox.measure_norm.load`.
+
+These files contain aggregate statistics only; rebuilding an equivalent
+reference requires your own HCP cohort.
 
 ## Licence
 
@@ -80,9 +100,10 @@ funded by the 16 NIH Institutes and Centers that support the NIH Blueprint for
 Neuroscience Research; and by the McDonnell Center for Systems Neuroscience at
 Washington University.
 
-Only aggregate, group-level products are distributed here. No individual
-subject data is included, and no individual is identifiable from these files.
-Users remain bound by the HCP Open Access Data Use Terms.
+Only aggregate, group-level products are distributed here. No per-subject
+values and no cohort membership list are included, so no individual is
+identifiable from these files. Users remain bound by the HCP Open Access Data
+Use Terms.
 
 ## References
 
