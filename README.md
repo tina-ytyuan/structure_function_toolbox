@@ -113,8 +113,25 @@ subject can be compared out of the box, with no cohort of your own.
 
 Each reference is a `.npz` holding, for one measure, the voxelwise **mean** and
 **standard deviation** across the cohort, plus the mask, the cohort size, and
-its own provenance. Drop them in `outputs/` and the app finds them
-automatically as `outputs/measure_ref_<measure>.npz`.
+its own provenance.
+
+### Getting them
+
+The files are ~15 MB each, so they are published as a
+[release](https://github.com/tina-ytyuan/structure_function_toolbox/releases/tag/refs-v1)
+rather than committed. Fetch them with:
+
+```bash
+python scripts/fetch_references.py            # all 11, verified by SHA-256
+python scripts/fetch_references.py rsfa reho  # or just the ones you need
+```
+
+That writes `outputs/measure_ref_<measure>.npz`, where the app looks for them
+automatically. You can also download them by hand from the release page and
+drop them in `outputs/` yourself.
+
+Without them the toolbox still computes every measure; you just get no
+comparison panel.
 
 ### How the shipped references were built
 
