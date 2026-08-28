@@ -140,6 +140,15 @@ def main():
     # volumes would need ~7 GB; this needs three arrays.
     count = mean = m2 = None
     used = 0
+
+    # Per-slice summaries, tracked alongside. The spread of *individual*
+    # subjects' slice averages cannot be recovered later from mean_map and
+    # sd_map: the SD of an average depends on how voxels co-vary within the
+    # slice, and averaging discards that. Deriving it as sd/sqrt(voxels)
+    # assumes voxels are independent, which understates it roughly 40-fold and
+    # makes every subject look abnormal. So measure it here, while the
+    # individual maps are still in hand.
+    s_count = s_mean = s_m2 = None
     for i, group in enumerate(groups, 1):
         # Each group is one observation: a single map, or a subject's runs
         # averaged. Runs are normalised individually first, so a run with
@@ -173,6 +182,23 @@ def main():
             continue
         arr = acc / acc_n
 
+        # This observation's mean within each axial slice, over the analysis
+        # mask, then Welford again over those per-slice values.
+        nz = mask.shape[2]
+        if s_mean is None:
+            s_count = np.zeros(nz, dtype=np.int32)
+            s_mean = np.zeros(nz, dtype=float)
+            s_m2 = np.zeros(nz, dtype=float)
+        for z in range(nz):
+            mz = mask[:, :, z] & np.isfinite(arr[:, :, z]) & (arr[:, :, z] != 0)
+            if mz.sum() < 20:
+                continue
+            sv = float(arr[:, :, z][mz].mean())
+            s_count[z] += 1
+            d = sv - s_mean[z]
+            s_mean[z] += d / s_count[z]
+            s_m2[z] += d * (sv - s_mean[z])
+
         # A voxel contributes only where this subject actually has a value.
         v = mask & np.isfinite(arr) & (arr != 0)
         count[v] += 1
@@ -186,6 +212,11 @@ def main():
 
     if used < 2:
         raise SystemExit(f"Need >=2 usable subjects; got {used}")
+
+    # Slice-level sample SD (ddof=1), across observations.
+    slice_sd = np.zeros_like(s_mean)
+    ok_s = s_count >= 2
+    slice_sd[ok_s] = np.sqrt(s_m2[ok_s] / (s_count[ok_s] - 1))
 
     # Sample SD (ddof=1), only where enough subjects contributed.
     enough = count >= 2
@@ -211,6 +242,10 @@ def main():
         "summaries": np.array([], dtype=float),
         "n": n,
         "affine": ref_affine,
+        # Per-slice distribution of individual subjects, for the profile plot.
+        "slice_mean": s_mean,
+        "slice_sd": slice_sd,
+        "slice_n": s_count,
         "normalized": bool(normalize),
         "mask_name": Path(args.mask).name if args.mask else "",
         "mask_voxels": int(group_mask.sum()),

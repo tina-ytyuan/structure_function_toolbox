@@ -340,10 +340,32 @@ def plot_slice_profile(subject_map, subject_mask, ref, affine=None,
     """
     import matplotlib.pyplot as plt
 
+    from . import measure_norm
+
     mean_map = np.asarray(ref["mean_map"], float)
-    sd_map = np.asarray(ref["sd_map"], float)
     gmask = np.asarray(ref["group_mask"], bool)
     valid = gmask & np.asarray(subject_mask, bool)
+
+    # Put the subject on the reference's scale, exactly as the t-test does.
+    # Normalised references live around 1.0 while raw ALFF/RSFA are in the tens,
+    # so skipping this puts the two lines orders of magnitude apart and the
+    # comparison is meaningless.
+    subject_map = np.asarray(subject_map, float)
+    if measure_norm.is_normalized(ref):
+        subject_map = measure_norm.global_normalize(subject_map, valid)
+
+    # The band is the measured spread of individual subjects' slice averages,
+    # stored when the reference was built. It cannot be derived from mean_map
+    # and sd_map after the fact: the SD of an average depends on how voxels
+    # co-vary within the slice, which averaging discards.
+    if "slice_mean" not in ref or "slice_sd" not in ref:
+        raise ValueError(
+            "reference has no slice_mean/slice_sd, so the cohort band cannot "
+            "be drawn; rebuild it with scripts/reference_from_subject_maps.py"
+        )
+    s_mean = np.asarray(ref["slice_mean"], float)
+    s_sd = np.asarray(ref["slice_sd"], float)
+    s_n = np.asarray(ref["slice_n"]) if "slice_n" in ref else None
 
     n_z = mean_map.shape[2]
     z_idx, subj, coh, lo, hi = [], [], [], [], []
@@ -351,15 +373,13 @@ def plot_slice_profile(subject_map, subject_mask, ref, affine=None,
         m = valid[:, :, z]
         if m.sum() < 20:          # skip slices with almost no brain
             continue
+        if s_sd[z] <= 0 or (s_n is not None and s_n[z] < 2):
+            continue
         z_idx.append(z)
         subj.append(float(np.asarray(subject_map)[:, :, z][m].mean()))
-        cm = float(mean_map[:, :, z][m].mean())
-        # Slice-level spread: voxelwise SDs combine over a slice mean as the
-        # root-mean-square divided by sqrt(number of voxels).
-        cs = float(np.sqrt((sd_map[:, :, z][m] ** 2).mean() / m.sum()))
-        coh.append(cm)
-        lo.append(cm - cs)
-        hi.append(cm + cs)
+        coh.append(float(s_mean[z]))
+        lo.append(float(s_mean[z] - s_sd[z]))
+        hi.append(float(s_mean[z] + s_sd[z]))
 
     # World-space z (mm) reads better than voxel index when an affine is known.
     if affine is not None:

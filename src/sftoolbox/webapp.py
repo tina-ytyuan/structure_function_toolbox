@@ -101,6 +101,8 @@ STYLE = """
  .row{display:flex;gap:1rem;flex-wrap:wrap;} .row>div{flex:1;min-width:150px;}
  .params{border-top:1px solid var(--border);margin-top:1.2rem;padding-top:.4rem;}
  .params .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
+ .cap{color:var(--muted);font-size:.85rem;margin:.15rem 0 1.4rem 0;
+   padding-left:.8rem;border-left:3px solid var(--line);max-width:60em;}
  .phint{color:var(--muted);font-size:.85rem;margin-top:.6rem;}
  table.peaks{border-collapse:collapse;margin-top:.8rem;font-size:.9rem;}
  table.peaks th,table.peaks td{border:1px solid var(--line);padding:.35rem .7rem;
@@ -537,14 +539,15 @@ RESULT = (
       <div class="stat"><div class="k">observed / chance <span title="1.0 = as many p&lt;0.05 voxels as chance predicts">(exp. 1.0)</span></div><div class="v">{{ cmp.obs_exp }}</div></div>
     </div>
     {% if cmp.profile_png %}
-    <p class="sub" style="margin-top:1rem;">Subject against the cohort by
-    axial position. The shaded band is the cohort mean ±1 SD; the subject
-    leaving the band marks a height where the whole slice runs high or low.</p>
-    <img src="data:image/png;base64,{{ cmp.profile_png }}">
+    <img src="data:image/png;base64,{{ cmp.profile_png }}" style="margin-top:1rem;">
+    <p class="cap">The shaded band is the cohort mean ±1 SD of each slice's
+    average. The subject leaving the band marks a height where the whole
+    slice runs high or low. Slice averaging cancels most voxel-level noise,
+    so this band is tighter than the voxelwise one behind the t-test.</p>
     {% endif %}
-    <p class="sub" style="margin-top:1rem;">t map (uncorrected). Red = above the
-    group, blue = below.</p>
-    <img src="data:image/png;base64,{{ cmp.t_png }}">
+    <img src="data:image/png;base64,{{ cmp.t_png }}" style="margin-top:1rem;">
+    <p class="cap">Uncorrected. Shown for reference only; report the
+    FDR-corrected result below.</p>
     {% if cmp.resampled %}
     <p class="phint"><b>Resampled:</b> {{ cmp.resampled }}</p>
     {% endif %}
@@ -565,9 +568,9 @@ RESULT = (
     <p class="phint">A result this sparse is usually indistinguishable from
     noise. Check the calibration figures above before interpreting it.</p>
     {% else %}
-    <p class="sub" style="margin-top:1rem;">t map, FDR-corrected (q&lt;0.05;
-    non-surviving voxels set to 0). BH threshold on raw p: {{ cmp.p_thr }}.</p>
-    <img src="data:image/png;base64,{{ cmp.t_fdr_png }}">
+    <img src="data:image/png;base64,{{ cmp.t_fdr_png }}" style="margin-top:1rem;">
+    <p class="cap">Non-surviving voxels set to 0. Benjamini-Hochberg
+    threshold on raw p: {{ cmp.p_thr }}.</p>
     {% endif %}
     <p class="phint">Report the FDR-corrected result. Benjamini-Hochberg controls
     the expected proportion of false positives across the {{ cmp.n_tested }}
@@ -1042,6 +1045,16 @@ def _as_download(resp):
     resp.set_cookie("sft_dl", "1", max_age=60, path="/")
     return resp
 
+def _slice_profile_png(map3d, mask, ref, affine, measure):
+    """Cohort band profile, or None if the reference predates it."""
+    try:
+        return _fig_to_b64(viz.plot_slice_profile(
+            map3d, mask, ref, affine=affine,
+            label=_measure_label(measure)))
+    except ValueError:
+        return None
+
+
 def _hist_png(map3d, mask, exclude_zero=True, measure=None):
     label = _measure_label(measure) if measure else ""
     return _fig_to_b64(
@@ -1222,9 +1235,8 @@ def _compare_pngs(measure, map3d, mask, affine):
             "obs_exp": f"{obs_exp:.2f}" if tv.size else "n/a",
             "calib": calib,
             "resampled": resampled,
-            "profile_png": _fig_to_b64(viz.plot_slice_profile(
-                map3d, mask, ref, affine=affine,
-                label=_measure_label(measure))),
+            "profile_png": _slice_profile_png(
+                map3d, mask, ref, affine, measure),
             "sparse": sparse,
             "peaks": peaks,
             "ref_mask_name": ref_mask_name,
