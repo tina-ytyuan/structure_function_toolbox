@@ -323,6 +323,70 @@ def plot_value_hist(map_3d: np.ndarray, mask: np.ndarray | None = None,
     return _save(fig, out_path)
 
 
+def plot_slice_profile(subject_map, subject_mask, ref, affine=None,
+                       label: str = "", out_path=None):
+    """Subject against the cohort, as a profile down the axial axis.
+
+    One point per axial slice: the cohort mean as a line, +/-1 SD as a shaded
+    band, and the subject as a second line on top. A subject who tracks the
+    band is unremarkable; excursions outside it localise to a height in the
+    brain, which a histogram cannot show and a box plot per slice would clutter.
+
+    The band is the spread of the cohort's *slice means*, not the voxelwise SD.
+    Averaging over a slice cancels much of the voxel-level noise, so this band
+    is necessarily tighter than the voxelwise one used for the t-test, and the
+    two answer different questions: this asks whether a whole slice sits high or
+    low, the t-test asks about individual voxels.
+    """
+    import matplotlib.pyplot as plt
+
+    mean_map = np.asarray(ref["mean_map"], float)
+    sd_map = np.asarray(ref["sd_map"], float)
+    gmask = np.asarray(ref["group_mask"], bool)
+    valid = gmask & np.asarray(subject_mask, bool)
+
+    n_z = mean_map.shape[2]
+    z_idx, subj, coh, lo, hi = [], [], [], [], []
+    for z in range(n_z):
+        m = valid[:, :, z]
+        if m.sum() < 20:          # skip slices with almost no brain
+            continue
+        z_idx.append(z)
+        subj.append(float(np.asarray(subject_map)[:, :, z][m].mean()))
+        cm = float(mean_map[:, :, z][m].mean())
+        # Slice-level spread: voxelwise SDs combine over a slice mean as the
+        # root-mean-square divided by sqrt(number of voxels).
+        cs = float(np.sqrt((sd_map[:, :, z][m] ** 2).mean() / m.sum()))
+        coh.append(cm)
+        lo.append(cm - cs)
+        hi.append(cm + cs)
+
+    # World-space z (mm) reads better than voxel index when an affine is known.
+    if affine is not None:
+        aff = np.asarray(affine, float)
+        xs = [float((aff @ np.array([0.0, 0.0, z, 1.0]))[2]) for z in z_idx]
+        xlabel = "axial position z (mm)"
+    else:
+        xs = z_idx
+        xlabel = "axial slice index"
+
+    fig, ax = plt.subplots(figsize=(7.5, 3.0))
+    ax.fill_between(xs, lo, hi, color="#c9c9c3", alpha=0.85,
+                    label="cohort mean ±1 SD", linewidth=0)
+    ax.plot(xs, coh, color="#6f6f68", linewidth=1.4, label="cohort mean")
+    ax.plot(xs, subj, color="#b03a2e", linewidth=1.8, label="this subject")
+    ax.set_xlabel(xlabel)
+    # Measure names are long; keep the axis short and carry the full name in
+    # the title, otherwise the label runs off the figure.
+    ax.set_ylabel("mean value per slice")
+    ax.set_title(
+        f"{label + ': ' if label else ''}subject vs cohort by axial position",
+        fontsize=10)
+    ax.legend(frameon=False, fontsize=8, loc="best")
+    fig.tight_layout()
+    return _save(fig, out_path)
+
+
 def plot_subject_vs_reference(
     subject_value, reference: dict, out_path=None, region: int | None = None
 ):

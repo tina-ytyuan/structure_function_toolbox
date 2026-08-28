@@ -536,6 +536,12 @@ RESULT = (
       <div class="stat"><div class="k">SD of t <span title="1.0 = correctly calibrated">(exp. 1.0)</span></div><div class="v">{{ cmp.t_sd }}</div></div>
       <div class="stat"><div class="k">observed / chance <span title="1.0 = as many p&lt;0.05 voxels as chance predicts">(exp. 1.0)</span></div><div class="v">{{ cmp.obs_exp }}</div></div>
     </div>
+    {% if cmp.profile_png %}
+    <p class="sub" style="margin-top:1rem;">Subject against the cohort by
+    axial position. The shaded band is the cohort mean ±1 SD; the subject
+    leaving the band marks a height where the whole slice runs high or low.</p>
+    <img src="data:image/png;base64,{{ cmp.profile_png }}">
+    {% endif %}
     <p class="sub" style="margin-top:1rem;">t map (uncorrected). Red = above the
     group, blue = below.</p>
     <img src="data:image/png;base64,{{ cmp.t_png }}">
@@ -1216,6 +1222,9 @@ def _compare_pngs(measure, map3d, mask, affine):
             "obs_exp": f"{obs_exp:.2f}" if tv.size else "n/a",
             "calib": calib,
             "resampled": resampled,
+            "profile_png": _fig_to_b64(viz.plot_slice_profile(
+                map3d, mask, ref, affine=affine,
+                label=_measure_label(measure))),
             "sparse": sparse,
             "peaks": peaks,
             "ref_mask_name": ref_mask_name,
