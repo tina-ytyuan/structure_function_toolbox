@@ -135,17 +135,16 @@ comparison panel.
 
 ### How the shipped references were built
 
-| | |
-|---|---|
-| Source | Human Connectome Project Young Adult, 936 subjects |
-| Runs | Rest1LR, Rest1RL, Rest2LR, Rest2RL (3,744 maps) |
-| Run handling | Each run is a **separate observation** |
-| Normalisation | Global in-mask mean (DPABI *m* convention) |
-| Mask | `final_mask_no_ventricles.nii`, 226,304 voxels, MNI 2 mm (91×109×91) |
-| SD | Sample SD, N−1 denominator |
-| `n` stored | **936**, the number of people, not the 3,744 maps |
 
-Two of those choices matter enough to explain.
+|               |                                                                        |
+| ------------- | ---------------------------------------------------------------------- |
+| Source        | Human Connectome Project Young Adult, 936 subjects                     |
+| Runs          | Rest1LR, Rest1RL, Rest2LR, Rest2RL (3,744 maps)                        |
+| Run handling  | Each run is a separate observation                                    |
+| Normalisation | Global in-mask mean (DPABI*m* convention)                              |
+| Mask          | `final_mask_no_ventricles.nii`, 226,304 voxels, MNI 2 mm (91×109×91) |
+| SD            | Sample SD, N−1 denominator                                            |
+| `n` stored    | 936, the number of people, not the 3,744 maps                          |
 
 **Global normalisation.** Amplitude measures (ALFF, RSFA) are in arbitrary BOLD
 units, so scanner gain differs between subjects with no biological meaning.
@@ -170,14 +169,15 @@ A reference is well calibrated when a typical held-out subject looks
 unremarkable. Two quantities have known expected values: the SD of *t* across
 voxels (1.0) and the ratio of p<0.05 voxels to chance (1.0):
 
-| measure | SD(t) | obs/chance | | measure | SD(t) | obs/chance |
-|---|---|---|---|---|---|---|
-| rsfa | 1.04 | 0.99 | | falff_slow4 | 1.01 | 0.94 |
-| alff | 1.04 | 0.97 | | falff_slow5 | 1.02 | 0.88 |
-| falff | 1.03 | 0.96 | | int | 0.98 | 0.80 |
-| alff_slow4 | 1.01 | 0.90 | | coherence_reho | 0.98 | 0.82 |
-| alff_slow5 | 1.03 | 0.97 | | mse | 0.88 | 0.60 |
-| | | | | **reho** | **0.85** | **0.32** |
+
+| measure    | SD(t) | obs/chance |  | measure        | SD(t)    | obs/chance |
+| ---------- | ----- | ---------- | - | -------------- | -------- | ---------- |
+| rsfa       | 1.04  | 0.99       |  | falff_slow4    | 1.01     | 0.94       |
+| alff       | 1.04  | 0.97       |  | falff_slow5    | 1.02     | 0.88       |
+| falff      | 1.03  | 0.96       |  | int            | 0.98     | 0.80       |
+| alff_slow4 | 1.01  | 0.90       |  | coherence_reho | 0.98     | 0.82       |
+| alff_slow5 | 1.03  | 0.97       |  | mse            | 0.88     | 0.60       |
+|            |       |            |  | **reho**       | **0.85** | **0.32**   |
 
 **Known limitation:** ReHo is conservative. It is Kendall's *W*, bounded on
 [0, 1] and typically left-skewed, while the Crawford & Howell t-test assumes a
