@@ -10,6 +10,10 @@ The toolbox does **not** preprocess. It consumes already-preprocessed data
 that conforms to [`docs/input_spec.md`](docs/input_spec.md), computes measures,
 and compares.
 
+**New here?** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) walks through
+setup from an empty machine to your first result, including how to get the
+reference files.
+
 ## What it looks like
 
 A small local web app (nothing leaves your machine) walks you from an uploaded
