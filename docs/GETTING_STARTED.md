@@ -192,6 +192,18 @@ The environment is not activated, or the install did not complete. Run
 The reference files are missing. Run `python scripts/fetch_references.py` and
 check that `outputs/` contains eleven `.npz` files.
 
+**`CERTIFICATE_VERIFY_FAILED` while fetching references**
+Your Python cannot verify HTTPS certificates. This is common on macOS with
+Python installed from python.org, which ships its own certificate store rather
+than using the system one. Fix it with `pip install certifi`, or run the
+installer's own command once:
+
+```bash
+open "/Applications/Python 3.12/Install Certificates.command"
+```
+
+Adjust the version number to match your install.
+
 **`HTTP 404` while fetching references**
 The release could not be reached. Check the releases page in a browser. If the
 repository is private, the files are not publicly downloadable.

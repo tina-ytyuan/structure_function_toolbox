@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -34,11 +35,27 @@ MEASURES = [
 ]
 
 
+def _ssl_context():
+    """A context with a usable certificate bundle.
+
+    Python installed from python.org on macOS ships its own certificate store
+    and does not read the system one, so HTTPS fails with
+    CERTIFICATE_VERIFY_FAILED until the bundled Install Certificates command is
+    run. certifi provides the same bundle and arrives with the toolbox's
+    dependencies, so prefer it and fall back to the system default.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
 def download(url: str, dest: Path, label: str) -> bool:
     """Stream a file to disk, showing progress. Returns True on success."""
     tmp = dest.with_suffix(dest.suffix + ".part")
     try:
-        with urllib.request.urlopen(url) as r:
+        with urllib.request.urlopen(url, context=_ssl_context()) as r:
             total = int(r.headers.get("Content-Length") or 0)
             done = 0
             with open(tmp, "wb") as f:
@@ -59,7 +76,13 @@ def download(url: str, dest: Path, label: str) -> bool:
     except urllib.error.HTTPError as e:
         print(f"\r  {label}: HTTP {e.code} {e.reason}")
     except urllib.error.URLError as e:
-        print(f"\r  {label}: {e.reason}")
+        reason = str(e.reason)
+        print(f"\r  {label}: {reason}")
+        if "CERTIFICATE_VERIFY_FAILED" in reason:
+            print("     Your Python cannot verify HTTPS certificates. Fix with:")
+            print("       pip install certifi")
+            print("     or, on macOS with python.org Python, run once:")
+            print('       open "/Applications/Python 3.x/Install Certificates.command"')
     finally:
         tmp.unlink(missing_ok=True)
     return False
