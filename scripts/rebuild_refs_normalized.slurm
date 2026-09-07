@@ -26,15 +26,16 @@ set -euo pipefail
 mkdir -p slurm_logs outputs
 
 # ---- CONFIG (override with --export=ALL,VAR=value) -------------------
-PROJECT="${PROJECT:-/hpc/group/396-brainfun26}"
+PROJECT="${PROJECT:-/path/to/project}"
 
 # RUN=all pools every run (matching the group's mean/SD maps, which used
 # Rest1LR, Rest1RL, Rest2LR and Rest2RL). A subject's runs are averaged
 # together before aggregating, so n stays equal to the number of people.
 RUN="${RUN:-all}"
 if [ "$RUN" = "all" ]; then RUN_GLOB="*"; else RUN_GLOB="$RUN"; fi
-AJAY_ROOT="${AJAY_ROOT:-$PROJECT/ajay/results_gpu_raw/$RUN_GLOB}"
-ARNAV_ROOT="${ARNAV_ROOT:-$PROJECT/arnav/results/$RUN_GLOB}"
+# Two source trees: the core four measures and the extended set.
+CORE_ROOT="${CORE_ROOT:-$PROJECT/core_measures/$RUN_GLOB}"
+EXTRA_ROOT="${EXTRA_ROOT:-$PROJECT/extra_measures/$RUN_GLOB}"
 MASK="${MASK:-$PROJECT/data_FA/masks/final_mask_no_ventricles.nii}"
 OUT_DIR="${OUT_DIR:-outputs}"
 SUBJECTS="${SUBJECTS:-}"          # optional cohort ID list
@@ -43,19 +44,19 @@ SUBJECTS="${SUBJECTS:-}"          # optional cohort ID list
 # The two pipelines name their outputs differently, and a loose glob would
 # cross-match (e.g. *alff_slow4* also hits falff_slow4). Map each toolbox
 # measure to its exact source glob instead.
-#   Ajay:  <root>/<subject>/<subject>_finproc_LR_<measure>.nii.gz
-#   Arnav: <root>/<subject>/<key>.nii.gz
+#   core:  <root>/<subject>/<subject>_..._<measure>.nii.gz
+#   extra: <root>/<subject>/<key>.nii.gz
 glob_for() {
     case "$1" in
-        rsfa|alff|reho|falff)  echo "$AJAY_ROOT/*/*_$1.nii.gz" ;;
-        alff_slow4)            echo "$ARNAV_ROOT/*/alff_slow4.nii.gz" ;;
-        alff_slow5)            echo "$ARNAV_ROOT/*/alff_slow5.nii.gz" ;;
-        falff_slow4)           echo "$ARNAV_ROOT/*/falff_slow4.nii.gz" ;;
-        falff_slow5)           echo "$ARNAV_ROOT/*/falff_slow5.nii.gz" ;;
-        int)                   echo "$ARNAV_ROOT/*/int_map.nii.gz" ;;
-        coherence_reho)        echo "$ARNAV_ROOT/*/coherence_reho.nii.gz" ;;
+        rsfa|alff|reho|falff)  echo "$CORE_ROOT/*/*_$1.nii.gz" ;;
+        alff_slow4)            echo "$EXTRA_ROOT/*/alff_slow4.nii.gz" ;;
+        alff_slow5)            echo "$EXTRA_ROOT/*/alff_slow5.nii.gz" ;;
+        falff_slow4)           echo "$EXTRA_ROOT/*/falff_slow4.nii.gz" ;;
+        falff_slow5)           echo "$EXTRA_ROOT/*/falff_slow5.nii.gz" ;;
+        int)                   echo "$EXTRA_ROOT/*/int_map.nii.gz" ;;
+        coherence_reho)        echo "$EXTRA_ROOT/*/coherence_reho.nii.gz" ;;
         # Toolbox MSE uses scales 1-5, matching mse_complexity_index_1_5.
-        mse)                   echo "$ARNAV_ROOT/*/mse_complexity_index_1_5.nii.gz" ;;
+        mse)                   echo "$EXTRA_ROOT/*/mse_complexity_index_1_5.nii.gz" ;;
         *)                     echo "" ;;
     esac
 }
@@ -67,8 +68,8 @@ if [ "${#MEASURES[@]}" -eq 0 ]; then
 fi
 
 echo "Job ${SLURM_JOB_ID:-local} on $(hostname) | start $(date)"
-echo "ajay maps : $AJAY_ROOT"
-echo "arnav maps: $ARNAV_ROOT"
+echo "core maps : $CORE_ROOT"
+echo "extra maps: $EXTRA_ROOT"
 echo "mask      : $MASK"
 echo "measures  : ${MEASURES[*]}"
 [ -n "$SUBJECTS" ] && echo "cohort list: $SUBJECTS" || \
