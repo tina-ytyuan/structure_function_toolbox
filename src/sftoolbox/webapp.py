@@ -390,29 +390,8 @@ machine.</p>
   </div>
 </form>
 
-<form method="post" action="/fa" enctype="multipart/form-data" class="card">
-  <h2>FA &nbsp;Structural (diffusion)</h2>
-  <p class="sub">Upload a precomputed FA map to view white-matter FA. Set the FA
-  threshold below which voxels are treated as non-white-matter and excluded.</p>
-
-  <label>FA map &mdash; 3D NIfTI</label>
-  <input type="file" name="fa">
-
-  <label>Atlas label volume &mdash; 3D NIfTI (optional, for regional FA)</label>
-  <input type="file" name="atlas">
-
-  <label>FA threshold: <span id="fathr_val">0.20</span></label>
-  <input type="range" name="fa_threshold" id="fathr" min="0" max="0.9"
-         step="0.01" value="0.20" style="width:100%;"
-         oninput="document.getElementById('fathr_val').textContent =
-                  parseFloat(this.value).toFixed(2);">
-  <p class="phint">0 keeps every voxel; 0.20 is the conventional white-matter
-  cutoff. You can fine-tune this on the results page without re-uploading.</p>
-
-  <div class="actions">
-    <button type="submit" class="btn-primary">Analyze FA</button>
-  </div>
-</form>
+<!-- The FA / structural panel is not shown. The /fa route and sftoolbox.fa
+     remain available, so re-enabling it is a matter of restoring this form. -->
 
 <form method="post" action="/demo" class="card">
   <h2>No data handy?</h2>
